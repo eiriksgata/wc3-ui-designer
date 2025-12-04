@@ -1,0 +1,49 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "UI设计器",
+  "version": "0.1.0",
+  "identifier": "com.frame.uidesigner",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:5173",
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "UI设计器",
+        "width": 1600,
+        "height": 900,
+        "minWidth": 800,
+        "minHeight": 600,
+        "resizable": true,
+        "fullscreen": false,
+        "maximized": false
+      }
+    ],
+    "security": {
+      "csp": null,
+      "capabilities": [
+        "default"
+      ]
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "app",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "windows": {
+      "certificateThumbprint": null,
+      "digestAlgorithm": "sha256",
+      "timestampUrl": ""
+    }
+  },
+  "plugins": {}
+}

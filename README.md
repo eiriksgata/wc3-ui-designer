@@ -1,39 +1,57 @@
-# UI设计器
+# UI 设计器
 
-#### 介绍
-{**以下是 Gitee 平台说明，您可以替换此简介**
-Gitee 是 OSCHINA 推出的基于 Git 的代码托管平台（同时支持 SVN）。专为开发者提供稳定、高效、安全的云端软件开发协作平台
-无论是个人、团队、或是企业，都能够用 Gitee 实现代码托管、项目管理、协作开发。企业项目请看 [https://gitee.com/enterprises](https://gitee.com/enterprises)}
+一个用于设计 Lua Frame UI 框架界面的可视化设计器。
 
-#### 软件架构
-软件架构说明
+## 项目结构
 
+```
+src/
+├── components/          # Vue 组件
+│   └── SettingsDialog.vue    # 设置对话框组件
+├── composables/        # 组合式函数（Composables）
+│   ├── useCanvas.js           # 画布相关功能（缩放、平移）
+│   ├── useGrid.js              # 网格相关功能
+│   ├── useLuaExport.js         # Lua 代码导出
+│   ├── useResources.js         # 资源管理
+│   ├── useRuler.js             # 标尺相关功能
+│   ├── useSettings.js          # 设置管理
+│   └── useWidgets.js           # 控件管理
+├── utils/              # 工具函数
+│   └── tgaDecoder.js           # TGA 图片解码
+├── App.vue             # 主应用组件
+├── main.js             # 应用入口
+└── style.css           # 全局样式
+```
 
-#### 安装教程
+## 功能模块说明
 
-1.  xxxx
-2.  xxxx
-3.  xxxx
+### Composables（组合式函数）
 
-#### 使用说明
+- **useSettings.js**: 管理应用设置（画布尺寸、标尺步长、网格步长等）
+- **useCanvas.js**: 处理画布的缩放、平移等操作
+- **useRuler.js**: 处理标尺的显示和刻度计算
+- **useGrid.js**: 处理网格的显示和吸附功能
+- **useWidgets.js**: 管理控件的增删改查、选择、拖动等
+- **useResources.js**: 管理图片资源的导入和预览
+- **useLuaExport.js**: 将设计的 UI 导出为 Lua 代码
 
-1.  xxxx
-2.  xxxx
-3.  xxxx
+### 工具函数
 
-#### 参与贡献
+- **tgaDecoder.js**: 将 TGA 格式图片解码为浏览器可显示的格式
 
-1.  Fork 本仓库
-2.  新建 Feat_xxx 分支
-3.  提交代码
-4.  新建 Pull Request
+### 组件
 
+- **SettingsDialog.vue**: 设置对话框，用于配置画布、标尺、网格等参数
 
-#### 特技
+## 使用方法
 
-1.  使用 Readme\_XXX.md 来支持不同的语言，例如 Readme\_en.md, Readme\_zh.md
-2.  Gitee 官方博客 [blog.gitee.com](https://blog.gitee.com)
-3.  你可以 [https://gitee.com/explore](https://gitee.com/explore) 这个地址来了解 Gitee 上的优秀开源项目
-4.  [GVP](https://gitee.com/gvp) 全称是 Gitee 最有价值开源项目，是综合评定出的优秀开源项目
-5.  Gitee 官方提供的使用手册 [https://gitee.com/help](https://gitee.com/help)
-6.  Gitee 封面人物是一档用来展示 Gitee 会员风采的栏目 [https://gitee.com/gitee-stars/](https://gitee.com/gitee-stars/)
+1. 安装依赖：`npm install`
+2. 启动开发服务器：`npm run dev`
+3. 构建生产版本：`npm run build`
+
+## 快捷键
+
+- **Ctrl + 滚轮**: 缩放画布
+- **空格 + 拖动**: 平移画布
+- **G**: 切换网格显示（128×128 → 64×64 → 关闭）
+

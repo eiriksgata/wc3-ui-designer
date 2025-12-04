@@ -1,0 +1,7 @@
+require 'framework.module.frame.base'
+require 'framework.module.frame.helper'
+require 'framework.module.frame.common'
+require 'framework.module.frame.control'
+require 'framework.module.frame.event'
+require 'framework.module.frame.animate'
+require 'framework.module.frame.tooltip'
