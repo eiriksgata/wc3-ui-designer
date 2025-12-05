@@ -2,21 +2,20 @@ import { ref, type Ref } from 'vue';
 import { open as tauriOpen, save as tauriSave } from '@tauri-apps/plugin-dialog';
 import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs';
 import type { Widget, Settings, ImageResource, Animation } from '../types';
-
-interface ExportPlugin {
-    id: string;
-    name: string;
-    type: 'builtin' | 'custom';
-    path: string | null;
-}
+import type { ExportPlugin } from '../types/plugin';
 
 interface ExportConfig {
     exportResourcesEnabled: boolean;
     exportResourcesPath: string;
-    exportLuaEnabled: boolean;
-    exportLuaPath: string;
-    exportPluginEnabled: boolean;
-    exportPluginPath: string;
+    // 新字段
+    exportCodeEnabled?: boolean;
+    exportCodePath?: string;
+    // 旧字段（向后兼容）
+    exportLuaEnabled?: boolean;
+    exportLuaPath?: string;
+    // 已移除的字段（不再使用）
+    exportPluginEnabled?: boolean;
+    exportPluginPath?: string;
     selectedExportPlugin: string;
     exportPlugins: ExportPlugin[];
 }
@@ -31,10 +30,8 @@ export function useProjectFile(
     nextAnimIdAnim: Ref<number>,
     exportResourcesEnabled: Ref<boolean>,
     exportResourcesPath: Ref<string>,
-    exportLuaEnabled: Ref<boolean>,
-    exportLuaPath: Ref<string>,
-    exportPluginEnabled: Ref<boolean>,
-    exportPluginPath: Ref<string>,
+    exportCodeEnabled: Ref<boolean>,
+    exportCodePath: Ref<string>,
     selectedExportPlugin: Ref<string>,
     exportPlugins: Ref<ExportPlugin[]>,
     pushHistory: () => void,
@@ -61,10 +58,8 @@ export function useProjectFile(
             exportConfig: {
                 exportResourcesEnabled: exportResourcesEnabled.value,
                 exportResourcesPath: exportResourcesPath.value,
-                exportLuaEnabled: exportLuaEnabled.value,
-                exportLuaPath: exportLuaPath.value,
-                exportPluginEnabled: exportPluginEnabled.value,
-                exportPluginPath: exportPluginPath.value,
+                exportCodeEnabled: exportCodeEnabled.value,
+                exportCodePath: exportCodePath.value,
                 selectedExportPlugin: selectedExportPlugin.value,
                 exportPlugins: exportPlugins.value,
             },
@@ -162,15 +157,14 @@ export function useProjectFile(
                 animations.value = [];
                 nextAnimIdAnim.value = 1;
             }
-            // 恢复导出配置
+            // 恢复导出配置（支持新旧字段名）
             if (data.exportConfig) {
                 const config = data.exportConfig as ExportConfig;
                 exportResourcesEnabled.value = config.exportResourcesEnabled ?? false;
                 exportResourcesPath.value = config.exportResourcesPath || '';
-                exportLuaEnabled.value = config.exportLuaEnabled ?? true;
-                exportLuaPath.value = config.exportLuaPath || '';
-                exportPluginEnabled.value = config.exportPluginEnabled ?? false;
-                exportPluginPath.value = config.exportPluginPath || '';
+                // 优先使用新字段，如果没有则使用旧字段（向后兼容）
+                exportCodeEnabled.value = config.exportCodeEnabled ?? config.exportLuaEnabled ?? true;
+                exportCodePath.value = config.exportCodePath || config.exportLuaPath || '';
                 if (config.selectedExportPlugin) {
                     selectedExportPlugin.value = config.selectedExportPlugin;
                 }
@@ -248,15 +242,14 @@ export function useProjectFile(
                     animations.value = [];
                     nextAnimIdAnim.value = 1;
                 }
-                // 恢复导出配置
+                // 恢复导出配置（支持新旧字段名）
                 if (data.exportConfig) {
                     const config = data.exportConfig as ExportConfig;
                     exportResourcesEnabled.value = config.exportResourcesEnabled ?? false;
                     exportResourcesPath.value = config.exportResourcesPath || '';
-                    exportLuaEnabled.value = config.exportLuaEnabled ?? true;
-                    exportLuaPath.value = config.exportLuaPath || '';
-                    exportPluginEnabled.value = config.exportPluginEnabled ?? false;
-                    exportPluginPath.value = config.exportPluginPath || '';
+                    // 优先使用新字段，如果没有则使用旧字段（向后兼容）
+                    exportCodeEnabled.value = config.exportCodeEnabled ?? config.exportLuaEnabled ?? true;
+                    exportCodePath.value = config.exportCodePath || config.exportLuaPath || '';
                     if (config.selectedExportPlugin) {
                         selectedExportPlugin.value = config.selectedExportPlugin;
                     }
@@ -299,10 +292,8 @@ export function useProjectFile(
         // 重置导出配置为默认值
         exportResourcesEnabled.value = false;
         exportResourcesPath.value = '';
-        exportLuaEnabled.value = true;
-        exportLuaPath.value = '';
-        exportPluginEnabled.value = false;
-        exportPluginPath.value = '';
+        exportCodeEnabled.value = true;
+        exportCodePath.value = '';
 
         // 不改变 selectedExportPlugin / exportPlugins，本身由外部控制
 

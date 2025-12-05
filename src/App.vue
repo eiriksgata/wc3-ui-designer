@@ -186,10 +186,10 @@
 
       <!-- 导出面板 -->
       <ExportPanel :show="showExportPanel" :ui-zoom="uiZoom" v-model:exportResourcesEnabled="exportResourcesEnabled"
-        v-model:exportResourcesPath="exportResourcesPath" v-model:exportLuaEnabled="exportLuaEnabled"
-        v-model:exportLuaPath="exportLuaPath" v-model:selectedExportPlugin="selectedExportPlugin"
+        v-model:exportResourcesPath="exportResourcesPath" v-model:exportCodeEnabled="exportCodeEnabled"
+        v-model:exportCodePath="exportCodePath" v-model:selectedExportPlugin="selectedExportPlugin"
         :export-plugins="exportPlugins" @close="showExportPanel = false"
-        @select-export-resources-path="selectExportResourcesPath" @select-export-lua-path="selectExportLuaPath"
+        @select-export-resources-path="selectExportResourcesPath" @select-export-code-path="selectExportCodePath"
         @load-custom-plugin="loadCustomPlugin" @create-new-plugin="createNewPlugin" @edit-plugin="handleEditPlugin"
         @delete-plugin="handleDeletePlugin" @do-export="doExport" />
 
@@ -232,8 +232,8 @@
     <CloseProjectDialog :show="showCloseConfirm" @save-and-close="handleCloseConfirmSaveAndClose"
       @discard="handleCloseConfirmDiscard" @cancel="handleCloseConfirmCancel" />
 
-    <!-- Lua 调试输出面板 -->
-    <LuaDebugDialog :show="showLuaDebugPanel" :output="luaDebugOutput" @close="showLuaDebugPanel = false" />
+    <!-- 插件调试输出面板 -->
+    <PluginDebugDialog :show="showPluginDebugPanel" :output="pluginDebugOutput" @close="showPluginDebugPanel = false" />
 
     <!-- 插件编辑器对话框 -->
     <PluginEditorDialog :show="showPluginEditor" v-model:name="pluginEditorName" v-model:content="pluginEditorContent"
@@ -256,7 +256,7 @@ import CloseProjectDialog from './components/CloseProjectDialog.vue';
 import ResourcesPanel from './components/ResourcesPanel.vue';
 import ExportPanel from './components/ExportPanel.vue';
 import ExportResultDialog from './components/ExportResultDialog.vue';
-import LuaDebugDialog from './components/LuaDebugDialog.vue';
+import PluginDebugDialog from './components/PluginDebugDialog.vue';
 import PluginEditorDialog from './components/PluginEditorDialog.vue';
 import KeyboardShortcutsDialog from './components/KeyboardShortcutsDialog.vue';
 import TopMenuBar from './components/TopMenuBar.vue';
@@ -281,7 +281,6 @@ import { useExport } from './composables/useExport';
 import { useHierarchyTree } from './composables/useHierarchyTree';
 import { useKeyboard } from './composables/useKeyboard';
 import { useCanvasInteraction } from './composables/useCanvasInteraction';
-import { useLuaExport } from './composables/useLuaExport';
 import { useAnimations } from './composables/useAnimations';
 
 // 使用组合式函数
@@ -294,7 +293,6 @@ const { rulerStep, rulerXTicks, rulerYTicks } = useRuler(settings, canvas.canvas
 const { gridMode, gridSnapEnabled, gridStep, gridXTicks, gridYTicks, toggleGridSnap } = useGrid(settings);
 const widgets = useWidgets();
 const resources = useResources();
-const { exportLua } = useLuaExport();
 
 // 解构 canvas 相关变量
 const {
@@ -368,14 +366,6 @@ const propertyTabs = [
 ];
 const activePropertyTab = ref('props');
 
-// 包一层，导出时把动画数据也传给 Lua 导出函数
-const exportLuaFn = (widgetsForExport, options = {}) => {
-  const animationsMap = getAnimationsForExport();
-  return exportLua(widgetsForExport, {
-    ...options,
-    animations: animationsMap,
-  });
-};
 
 // 解构 resources 相关变量
 const {
@@ -429,13 +419,13 @@ const onImportResourcesClick = () => {
   onImportResourcesClickWrapper();
 };
 
-// 使用导出功能 composable（需要在 exportLuaFn 定义之后）
+// 使用导出功能 composable
 // 注意：saveProjectToFile 将在下面定义后传入
 let saveProjectToFileForExport = null;
 const exportComposable = useExport(
   widgetsList,
   imageResources,
-  exportLuaFn,
+  settings,
   message,
   () => saveProjectToFileForExport && saveProjectToFileForExport(),
   getAnimationsForExport, // 传递动画导出函数给 useExport，用于插件导出
@@ -446,10 +436,8 @@ const {
   exportResultMessages,
   exportResourcesEnabled,
   exportResourcesPath,
-  exportLuaEnabled,
-  exportLuaPath,
-  exportPluginEnabled,
-  exportPluginPath,
+  exportCodeEnabled,
+  exportCodePath,
   selectedExportPlugin,
   exportPlugins,
   showPluginEditor,
@@ -457,9 +445,7 @@ const {
   pluginEditorName,
   pluginEditorPath,
   selectExportResourcesPath,
-  selectExportLuaPath,
-  selectExportPluginPath,
-  generatePluginLua,
+  selectExportCodePath,
   doExport,
   resetExportConfig,
   loadCustomPlugin,
@@ -473,8 +459,8 @@ const {
   confirmDialogOk,
   confirmDialogCancel,
   openPluginWithDefaultEditor,
-  showLuaDebugPanel,
-  luaDebugOutput,
+  showPluginDebugPanel,
+  pluginDebugOutput,
 } = exportComposable;
 
 // 内置控件类型（始终存在）
@@ -511,10 +497,8 @@ const projectFile = useProjectFile(
   nextAnimIdAnim,
   exportResourcesEnabled,
   exportResourcesPath,
-  exportLuaEnabled,
-  exportLuaPath,
-  exportPluginEnabled,
-  exportPluginPath,
+  exportCodeEnabled,
+  exportCodePath,
   selectedExportPlugin,
   exportPlugins,
   pushHistory,
@@ -544,7 +528,7 @@ exportComposable.setCurrentProjectPath(currentProjectPath);
 saveProjectToFileForExport = saveProjectToFile;
 
 // 监听导出配置变更，自动保存到项目文件
-watch([exportResourcesEnabled, exportResourcesPath, exportLuaEnabled, exportLuaPath], () => {
+watch([exportResourcesEnabled, exportResourcesPath, exportCodeEnabled, exportCodePath], () => {
   // 只有在项目已打开时才自动保存
   if (currentProjectPath.value && saveProjectToFile) {
     // 使用 nextTick 避免频繁保存

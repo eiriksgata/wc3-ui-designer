@@ -21,32 +21,39 @@
                         </div>
                     </div>
 
-                    <!-- 导出 Lua：勾选 + 路径整行在一行 -->
+                    <!-- 导出代码：勾选 + 路径整行在一行 -->
                     <div class="export-line">
                         <label class="export-option">
-                            <input type="checkbox" v-model="exportLuaEnabledModel" />
-                            <strong>导出 Lua</strong>
+                            <input type="checkbox" v-model="exportCodeEnabledModel" />
+                            <strong>导出代码</strong>
+                            <span v-if="currentPlugin" class="export-format-badge">
+                                ({{ currentPlugin.outputFormat?.toUpperCase() || 'CODE' }})
+                            </span>
                         </label>
-                        <div v-if="exportLuaEnabledModel" class="export-path-inline">
-                            <span class="export-path-inline-label">Lua 导出路径：</span>
+                        <div v-if="exportCodeEnabledModel" class="export-path-inline">
+                            <span class="export-path-inline-label">代码导出路径：</span>
                             <div class="export-path-input">
-                                <input id="export-lua-path" type="text" v-model="exportLuaPathModel"
-                                    placeholder="选择 Lua 文件保存位置..." readonly />
-                                <button @click.stop="emitSelectExportLuaPath" class="btn-select-path">选择路径</button>
+                                <input id="export-code-path" type="text" v-model="exportCodePathModel"
+                                    :placeholder="`选择 ${currentPlugin?.outputFormat?.toUpperCase() || '代码'} 文件保存位置...`" readonly />
+                                <button @click.stop="emitSelectExportCodePath" class="btn-select-path">选择路径</button>
                             </div>
                         </div>
                     </div>
                 </div>
 
-                <!-- 导出插件选择（放在导出 Lua 下方） -->
+                <!-- 导出插件选择（放在导出代码下方） -->
                 <div class="export-section">
                     <label for="export-plugin-select" style="display: block; margin-bottom: 8px;">选择导出插件：</label>
                     <div class="export-plugin-select-group">
                         <div class="custom-select-wrapper" @click.stop>
                             <button type="button" class="custom-select-button"
                                 @click.stop="showPluginDropdown = !showPluginDropdown">
-                                {{ currentPluginName }}
-                                {{ currentPluginIsBuiltin ? ' (内置)' : '' }}
+                                <span class="plugin-display-name">
+                                    {{ currentPluginName }}
+                                    <span v-if="currentPlugin" class="plugin-format">
+                                        ({{ currentPlugin.outputFormat?.toUpperCase() || 'CODE' }})
+                                    </span>
+                                </span>
                                 <span class="custom-select-arrow">▼</span>
                             </button>
                             <div v-if="showPluginDropdown" class="custom-select-dropdown" @click.stop>
@@ -54,9 +61,16 @@
                                     :class="{ 'selected': plugin.id === selectedExportPluginModel }"
                                     @click.stop="selectPlugin(plugin.id)">
                                     <span class="plugin-name">
-                                        {{ plugin.name }}{{ plugin.type === 'builtin' ? ' (内置)' : '' }}
+                                        {{ plugin.name }}
+                                        <span class="plugin-format-small">({{ plugin.outputFormat?.toUpperCase() || 'CODE' }})</span>
+                                        <span v-if="plugin.type === 'builtin'" class="plugin-badge">内置</span>
                                     </span>
-                                    <button v-if="plugin.type !== 'builtin' && plugin.id !== 'default'"
+                                    <button v-if="plugin.type !== 'custom' || plugin.id === 'default'"
+                                        class="plugin-delete-btn" @click.stop="emitDeletePlugin(plugin.id)"
+                                        title="删除插件" style="display: none;">
+                                        ×
+                                    </button>
+                                    <button v-else
                                         class="plugin-delete-btn" @click.stop="emitDeletePlugin(plugin.id)"
                                         title="删除插件">
                                         ×
@@ -66,10 +80,13 @@
                         </div>
                         <button @click="emitLoadCustomPlugin" class="btn-select-path">加载插件</button>
                         <button @click="emitCreateNewPlugin" class="btn-select-path">新建插件</button>
-                        <button v-if="selectedExportPluginModel !== 'default'" @click="emitEditPlugin"
+                        <button v-if="currentPlugin && currentPlugin.type === 'custom'" @click="emitEditPlugin"
                             class="btn-select-path">
                             编辑
                         </button>
+                    </div>
+                    <div v-if="currentPlugin && currentPlugin.description" class="plugin-description">
+                        {{ currentPlugin.description }}
                     </div>
                 </div>
 
@@ -77,7 +94,7 @@
             </div>
             <div class="export-footer">
                 <button @click="emitClose">取消</button>
-                <button @click="emitDoExport" :disabled="!exportResourcesEnabledModel && !exportLuaEnabledModel">
+                <button @click="emitDoExport" :disabled="!exportResourcesEnabledModel && !exportCodeEnabledModel">
                     导出
                 </button>
             </div>
@@ -97,14 +114,14 @@ const props = defineProps({
 
 const exportResourcesEnabledModel = defineModel('exportResourcesEnabled', { type: Boolean, default: false });
 const exportResourcesPathModel = defineModel('exportResourcesPath', { type: String, default: '' });
-const exportLuaEnabledModel = defineModel('exportLuaEnabled', { type: Boolean, default: false });
-const exportLuaPathModel = defineModel('exportLuaPath', { type: String, default: '' });
-const selectedExportPluginModel = defineModel('selectedExportPlugin', { type: String, default: 'default' });
+const exportCodeEnabledModel = defineModel('exportCodeEnabled', { type: Boolean, default: false });
+const exportCodePathModel = defineModel('exportCodePath', { type: String, default: '' });
+const selectedExportPluginModel = defineModel('selectedExportPlugin', { type: String, default: 'lua-export' });
 
 const emit = defineEmits([
     'close',
     'select-export-resources-path',
-    'select-export-lua-path',
+    'select-export-code-path',
     'load-custom-plugin',
     'create-new-plugin',
     'edit-plugin',
@@ -122,14 +139,14 @@ const currentPluginIsBuiltin = computed(() => currentPlugin.value?.type === 'bui
 
 const emitClose = () => emit('close');
 const emitSelectExportResourcesPath = () => emit('select-export-resources-path');
-const emitSelectExportLuaPath = () => emit('select-export-lua-path');
+const emitSelectExportCodePath = () => emit('select-export-code-path');
 const emitLoadCustomPlugin = () => emit('load-custom-plugin');
 const emitCreateNewPlugin = () => emit('create-new-plugin');
 const emitEditPlugin = () => emit('edit-plugin');
-const emitDeletePlugin = (id) => emit('delete-plugin', id);
+const emitDeletePlugin = (id: string) => emit('delete-plugin', id);
 const emitDoExport = () => emit('do-export');
 
-const selectPlugin = (pluginId) => {
+const selectPlugin = (pluginId: string) => {
     selectedExportPluginModel.value = pluginId;
     showPluginDropdown.value = false;
 };
@@ -459,5 +476,46 @@ watch(
 .plugin-delete-btn:hover {
     opacity: 1;
     background: #f44336;
+}
+
+.plugin-display-name {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.plugin-format {
+    font-size: 11px;
+    color: #888;
+    font-weight: normal;
+}
+
+.plugin-format-small {
+    font-size: 10px;
+    color: #888;
+    margin-left: 4px;
+}
+
+.plugin-badge {
+    font-size: 10px;
+    color: #4ec9b0;
+    margin-left: 6px;
+    padding: 2px 6px;
+    background: rgba(78, 201, 176, 0.1);
+    border-radius: 3px;
+}
+
+.export-format-badge {
+    font-size: 11px;
+    color: #888;
+    font-weight: normal;
+    margin-left: 4px;
+}
+
+.plugin-description {
+    margin-top: 6px;
+    font-size: 11px;
+    color: #888;
+    font-style: italic;
 }
 </style>

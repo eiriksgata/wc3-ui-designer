@@ -1,10 +1,10 @@
 <template>
     <div v-if="show" class="export-overlay" @click.self="emitClose">
-        <div class="export-dialog plugin-editor-dialog">
-            <h3>Lua 插件调试输出</h3>
+        <div class="export-dialog plugin-debug-dialog">
+            <h3>插件调试输出</h3>
             <div class="export-body">
                 <div class="export-section">
-                    <pre class="lua-debug-output">{{ output }}</pre>
+                    <pre class="plugin-debug-output">{{ output }}</pre>
                 </div>
             </div>
             <div class="export-footer">
@@ -48,7 +48,7 @@ const emitClose = () => emit('close');
     padding: 16px 20px;
 }
 
-.plugin-editor-dialog {
+.plugin-debug-dialog {
     max-width: 800px;
     width: 90vw;
 }
@@ -71,7 +71,7 @@ const emitClose = () => emit('close');
     gap: 10px;
 }
 
-.lua-debug-output {
+.plugin-debug-output {
     width: 100%;
     min-height: 200px;
     max-height: 500px;
@@ -88,3 +88,4 @@ const emitClose = () => emit('close');
     word-wrap: break-word;
 }
 </style>
+

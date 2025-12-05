@@ -9,9 +9,17 @@
                         placeholder="输入插件名称" />
                 </div>
                 <div class="export-section">
-                    <label for="plugin-editor-content">插件代码（Lua 5.4）：</label>
+                    <label for="plugin-editor-content">插件代码（TypeScript）：</label>
                     <textarea id="plugin-editor-content" v-model="contentModel" class="plugin-editor-textarea"
-                        placeholder="输入插件代码..."></textarea>
+                        placeholder="输入 TypeScript 插件代码..."></textarea>
+                    <div class="plugin-editor-hint">
+                        <p>提示：</p>
+                        <ul>
+                            <li>插件必须导出 <code>metadata</code> 对象和 <code>export</code> 函数</li>
+                            <li><code>export</code> 函数接收 <code>ExportContext</code> 参数，返回生成的代码字符串</li>
+                            <li>查看示例插件了解详细用法</li>
+                        </ul>
+                    </div>
                 </div>
             </div>
             <div class="export-footer">
@@ -135,5 +143,39 @@ const emitOpenDefaultEditor = () => emit('open-default-editor');
 
 .btn-open-editor:hover {
     background: #3a3a3d;
+}
+
+.plugin-editor-hint {
+    margin-top: 12px;
+    padding: 10px;
+    background: #1a1a1a;
+    border: 1px solid #3e3e42;
+    border-radius: 4px;
+    font-size: 11px;
+    color: #aaa;
+}
+
+.plugin-editor-hint p {
+    margin: 0 0 6px 0;
+    color: #ccc;
+    font-weight: 500;
+}
+
+.plugin-editor-hint ul {
+    margin: 0;
+    padding-left: 20px;
+}
+
+.plugin-editor-hint li {
+    margin: 4px 0;
+    line-height: 1.4;
+}
+
+.plugin-editor-hint code {
+    background: #2d2d30;
+    padding: 2px 4px;
+    border-radius: 3px;
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    color: #4ec9b0;
 }
 </style>
