@@ -118,7 +118,7 @@ function exportFunction(context: ExportContext): string {
     ts += '                    widget = new Button(config);\n';
     ts += '                    break;\n';
     ts += "                case 'text':\n";
-    ts += '                case 'label':\n';
+    ts += "                case 'label':\n";
     ts += '                    widget = new Text(config);\n';
     ts += '                    break;\n';
     ts += '                default:\n';

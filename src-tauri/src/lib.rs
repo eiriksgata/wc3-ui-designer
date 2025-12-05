@@ -1,7 +1,3 @@
-use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
-use std::process::Command;
-
 // 用系统默认编辑器打开文件
 #[tauri::command]
 async fn open_file_with_default_editor(file_path: String) -> Result<(), String> {
