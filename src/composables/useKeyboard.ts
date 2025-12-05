@@ -125,15 +125,10 @@ export function useKeyboard(
     };
 
     const handleKeyUp = (ev: KeyboardEvent) => {
-        const tag = ev.target && (ev.target as HTMLElement).tagName;
-        const isFormElement =
-            tag === 'INPUT' ||
-            tag === 'TEXTAREA' ||
-            tag === 'SELECT' ||
-            (ev.target && (ev.target as HTMLElement).isContentEditable);
-        
-        // 只在非表单元素中处理空格键释放
-        if (!isFormElement && ev.code === 'Space') {
+        // 空格键释放应该总是被跟踪，无论当前焦点在哪个元素上
+        // 这样可以避免状态错误：如果用户在画布上按下空格键，然后按住空格键的同时
+        // 将焦点移到输入框，再在输入框中释放空格键，isSpacePressed 应该被重置
+        if (ev.code === 'Space') {
             isSpacePressed.value = false;
         }
     };
