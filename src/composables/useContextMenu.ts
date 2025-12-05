@@ -1,7 +1,18 @@
-import { ref } from 'vue';
+import { ref, type Ref, type ComputedRef } from 'vue';
+import type { Widget } from '../types';
 
-export function useContextMenu(canvasRef, uiZoom, selectedIds) {
-    const contextMenu = ref({
+interface ContextMenuState {
+    visible: boolean;
+    x: number;
+    y: number;
+}
+
+export function useContextMenu(
+    canvasRef: Ref<HTMLElement | null>,
+    uiZoom: Ref<number>,
+    selectedIds: Ref<number[]>
+) {
+    const contextMenu = ref<ContextMenuState>({
         visible: false,
         x: 0,
         y: 0,
@@ -11,7 +22,7 @@ export function useContextMenu(canvasRef, uiZoom, selectedIds) {
         contextMenu.value.visible = false;
     };
 
-    const openContextMenu = (x, y) => {
+    const openContextMenu = (x: number, y: number) => {
         contextMenu.value = {
             visible: true,
             x,
@@ -19,7 +30,7 @@ export function useContextMenu(canvasRef, uiZoom, selectedIds) {
         };
     };
 
-    const onWidgetContextMenu = (widget, ev) => {
+    const onWidgetContextMenu = (widget: Widget, ev: MouseEvent) => {
         selectedIds.value = [widget.id];
         const canvas = canvasRef.value;
         if (!canvas) return;
@@ -30,7 +41,7 @@ export function useContextMenu(canvasRef, uiZoom, selectedIds) {
         openContextMenu(x, y);
     };
 
-    const onCanvasContextMenu = (ev) => {
+    const onCanvasContextMenu = (ev: MouseEvent) => {
         // 右键画布空白处，不改变当前选中，只弹出菜单
         const canvas = canvasRef.value;
         if (!canvas) return;

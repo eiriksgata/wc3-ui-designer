@@ -1,4 +1,4 @@
-import { ref } from 'vue';
+import { ref, type Ref } from 'vue';
 
 export function useUiZoom() {
     const uiZoom = ref(1);

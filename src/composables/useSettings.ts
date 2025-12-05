@@ -1,8 +1,9 @@
-import { ref } from 'vue';
+import { ref, type Ref } from 'vue';
+import type { Settings } from '../types';
 
 export function useSettings() {
     const showSettings = ref(false);
-    const settings = ref({
+    const settings: Ref<Settings> = ref({
         canvasWidth: 1920,
         canvasHeight: 1080,
         rulerStep: 50,
@@ -15,7 +16,7 @@ export function useSettings() {
         canvasBgImage: '',
     });
 
-    const saveSettings = () => {
+    const saveSettings = (): boolean => {
         try {
             window.localStorage.setItem('frame_vue_settings', JSON.stringify(settings.value));
             return true;
@@ -42,7 +43,7 @@ export function useSettings() {
         try {
             const raw = window.localStorage.getItem('frame_vue_settings');
             if (raw) {
-                const saved = JSON.parse(raw);
+                const saved = JSON.parse(raw) as Partial<Settings>;
                 if (saved) {
                     settings.value = { ...settings.value, ...saved };
                 }

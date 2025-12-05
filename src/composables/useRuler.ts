@@ -1,6 +1,13 @@
-import { computed } from 'vue';
+import { computed, type Ref } from 'vue';
+import type { Settings } from '../types';
 
-export function useRuler(settings, canvasSize, canvasScale, panX, panY) {
+export function useRuler(
+    settings: Ref<Settings>,
+    canvasSize: Ref<{ width: number; height: number }>,
+    canvasScale: Ref<number>,
+    panX: Ref<number>,
+    panY: Ref<number>
+) {
     const rulerStep = computed(() => settings.value.rulerStep);
     const canvasLogicalWidth = computed(() => settings.value.canvasWidth);
     const canvasLogicalHeight = computed(() => settings.value.canvasHeight);
@@ -19,7 +26,7 @@ export function useRuler(settings, canvasSize, canvasScale, panX, panY) {
         const startTick = Math.floor(rulerStartX / step) * step - step;
         const endTick = Math.ceil(rulerEndX / step) * step + step;
 
-        const ticks = [];
+        const ticks: number[] = [];
         for (let x = startTick; x <= endTick; x += step) {
             ticks.push(x);
         }
@@ -40,7 +47,7 @@ export function useRuler(settings, canvasSize, canvasScale, panX, panY) {
         const startTick = Math.floor(rulerStartY / step) * step - step;
         const endTick = Math.ceil(rulerEndY / step) * step + step;
 
-        const ticks = [];
+        const ticks: number[] = [];
         for (let y = startTick; y <= endTick; y += step) {
             ticks.push(y);
         }

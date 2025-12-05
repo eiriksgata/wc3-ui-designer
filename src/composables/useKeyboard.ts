@@ -1,31 +1,31 @@
-import { onMounted, onBeforeUnmount } from 'vue';
+import { onMounted, onBeforeUnmount, type Ref } from 'vue';
 
 export function useKeyboard(
-    copySelection,
-    pasteClipboardWithHistory,
-    undoLayout,
-    redoLayout,
-    saveProjectToFile,
-    saveProjectAsFile,
-    handleNewProject,
-    loadProjectFromFile,
-    closeProject,
-    uiZoom,
-    applyUiZoom,
-    deleteSelectedWithHistory,
-    selectedIds,
-    isSpacePressed,
-    isPanning,
-    gridMode,
-    doExport, // F9 导出
+    copySelection: () => void,
+    pasteClipboardWithHistory: () => void,
+    undoLayout: () => void,
+    redoLayout: () => void,
+    saveProjectToFile: () => Promise<boolean>,
+    saveProjectAsFile: () => Promise<void>,
+    handleNewProject: () => void,
+    loadProjectFromFile: () => void,
+    closeProject: () => void,
+    uiZoom: Ref<number>,
+    applyUiZoom: () => void,
+    deleteSelectedWithHistory: () => void,
+    selectedIds: Ref<number[]>,
+    isSpacePressed: Ref<boolean>,
+    isPanning: Ref<boolean>,
+    gridMode: Ref<number>,
+    doExport: () => Promise<void>, // F9 导出
 ) {
-    const handleKeyDown = (ev) => {
-        const tag = ev.target && ev.target.tagName;
+    const handleKeyDown = (ev: KeyboardEvent) => {
+        const tag = ev.target && (ev.target as HTMLElement).tagName;
         const isFormElement =
             tag === 'INPUT' ||
             tag === 'TEXTAREA' ||
             tag === 'SELECT' ||
-            (ev.target && ev.target.isContentEditable);
+            (ev.target && (ev.target as HTMLElement).isContentEditable);
 
         // 在输入框里允许默认的复制粘贴等，不拦截
         if (isFormElement) {
@@ -100,44 +100,46 @@ export function useKeyboard(
                 if (typeof doExport === 'function') {
                     doExport();
                     ev.preventDefault();
-                    ev.stopPropagation();
                 }
-            }
-        }
-        if (!isFormElement && ev.code === 'Space' && !isSpacePressed.value) {
-            isSpacePressed.value = true;
-            ev.preventDefault();
-        }
-        if (ev.code === 'KeyG' || ev.key === 'g' || ev.key === 'G') {
-            if (!ev.repeat) {
-                // G 键轮换网格显示模式：0=关闭，1=128*128，2=64*64，3=32*32
+            } else if (ev.code === 'Space') {
+                // 空格键：开始平移画布
+                if (!isPanning.value) {
+                    isSpacePressed.value = true;
+                }
+                ev.preventDefault();
+            } else if (ev.code === 'KeyG') {
+                // G 键：切换网格显示（128×128 → 64×64 → 关闭）
                 gridMode.value = (gridMode.value + 1) % 4;
                 ev.preventDefault();
-                ev.stopPropagation();
             }
         }
     };
 
-    const handleKeyUp = (ev) => {
+    const handleKeyUp = (ev: KeyboardEvent) => {
         if (ev.code === 'Space') {
             isSpacePressed.value = false;
-            isPanning.value = false;
         }
     };
 
     const setupKeyboardListeners = () => {
-        document.addEventListener('keydown', handleKeyDown, true);
-        document.addEventListener('keyup', handleKeyUp, true);
+        window.addEventListener('keydown', handleKeyDown);
+        window.addEventListener('keyup', handleKeyUp);
     };
 
     const removeKeyboardListeners = () => {
-        document.removeEventListener('keydown', handleKeyDown, true);
-        document.removeEventListener('keyup', handleKeyUp, true);
+        window.removeEventListener('keydown', handleKeyDown);
+        window.removeEventListener('keyup', handleKeyUp);
     };
 
+    onMounted(() => {
+        setupKeyboardListeners();
+    });
+
+    onBeforeUnmount(() => {
+        removeKeyboardListeners();
+    });
+
     return {
-        handleKeyDown,
-        handleKeyUp,
         setupKeyboardListeners,
         removeKeyboardListeners,
     };

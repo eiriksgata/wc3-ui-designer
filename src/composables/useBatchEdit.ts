@@ -1,8 +1,15 @@
-import { ref } from 'vue';
+import { ref, type Ref } from 'vue';
+import type { Widget } from '../types';
 
-export function useBatchEdit(widgetsList, selectedIds, pushHistory, moveWidgetWithChildren, supportsImage) {
+export function useBatchEdit(
+    widgetsList: Ref<Widget[]>,
+    selectedIds: Ref<number[]>,
+    pushHistory: () => void,
+    moveWidgetWithChildren: (rootId: number, dx: number, dy: number) => void,
+    supportsImage: (type: string) => boolean
+) {
     const batchMove = ref({ dx: 0, dy: 0 });
-    const batchSize = ref({ w: null, h: null });
+    const batchSize = ref<{ w: number | null; h: number | null }>({ w: null, h: null });
     const batchText = ref('');
     const batchImage = ref('');
 
@@ -13,7 +20,7 @@ export function useBatchEdit(widgetsList, selectedIds, pushHistory, moveWidgetWi
         if (!selectedIds.value.length) return;
         pushHistory();
         const set = new Set(selectedIds.value);
-        const rootIds = [];
+        const rootIds: number[] = [];
         widgetsList.value.forEach((w) => {
             if (set.has(w.id) && (w.parentId == null || !set.has(w.parentId))) {
                 rootIds.push(w.id);

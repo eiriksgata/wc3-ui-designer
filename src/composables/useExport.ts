@@ -1,21 +1,31 @@
-import { ref } from 'vue';
+import { ref, type Ref } from 'vue';
 import { open as tauriOpen, save as tauriSave } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
 import { readFile, writeFile, writeTextFile, readTextFile, mkdir } from '@tauri-apps/plugin-fs';
+import type { Widget, ImageResource, Animation } from '../types';
+
+interface ExportPlugin {
+    id: string;
+    name: string;
+    type: 'builtin' | 'custom';
+    path: string | null;
+}
+
+type CurrentProjectPathRef = Ref<string | null> | (() => string | null) | null;
 
 export function useExport(
-    widgetsList,
-    imageResources,
-    exportLuaFn,
-    message,
-    saveProjectToFile, // 添加保存项目的函数
-    getAnimationsForExport, // 新增：获取动画导出数据的函数
+    widgetsList: Ref<Widget[]>,
+    imageResources: Ref<ImageResource[]>,
+    exportLuaFn: (widgets: Widget[], options?: any) => string | undefined,
+    message: Ref<string>,
+    saveProjectToFile: () => Promise<boolean>, // 添加保存项目的函数
+    getAnimationsForExport: () => Record<string, Omit<Animation, 'id'>[]>, // 新增：获取动画导出数据的函数
 ) {
     // currentProjectPath 将在外部设置（可以是 ref 或函数）
-    let currentProjectPathRef = null;
+    let currentProjectPathRef: CurrentProjectPathRef = null;
     const showExportPanel = ref(false);
     const showExportResultPanel = ref(false);
-    const exportResultMessages = ref([]);
+    const exportResultMessages = ref<string[]>([]);
     const showLuaDebugPanel = ref(false);
     const luaDebugOutput = ref('');
     const exportResourcesEnabled = ref(false);
@@ -27,7 +37,7 @@ export function useExport(
 
     // 插件系统
     const selectedExportPlugin = ref('default'); // 默认使用内置插件
-    const exportPlugins = ref([
+    const exportPlugins = ref<ExportPlugin[]>([
         {
             id: 'default',
             name: '默认导出插件',
@@ -43,10 +53,10 @@ export function useExport(
     // 确认对话框状态
     const showConfirmDialog = ref(false);
     const confirmDialogMessage = ref('');
-    const confirmDialogCallback = ref(null);
+    const confirmDialogCallback = ref<((confirmed: boolean) => void) | null>(null);
 
     // 生成默认插件的 Lua 5.4 代码
-    const getDefaultPluginCode = () => {
+    const getDefaultPluginCode = (): string => {
         return `-- 默认导出插件 (Lua 5.4)
 -- 此插件定义了如何将 UI 设计器中的控件导出为 Lua 代码
 -- 参数:
@@ -281,7 +291,7 @@ end`;
     };
 
     // 获取当前项目的基础名称（用于类名，例如 xxx.uiproj -> xxx）
-    const getProjectBaseName = () => {
+    const getProjectBaseName = (): string => {
         if (!currentProjectPathRef) return 'GeneratedUI';
         const path =
             typeof currentProjectPathRef === 'function'
@@ -294,7 +304,7 @@ end`;
     };
 
     // 使用选中的插件生成 Lua 代码
-    const generateLuaWithPlugin = async (widgets, options = {}) => {
+    const generateLuaWithPlugin = async (widgets: Widget[], options: any = {}): Promise<string> => {
         if (!widgets || widgets.length === 0) {
             return '';
         }
@@ -315,7 +325,7 @@ end`;
         if (plugin.type === 'custom' && plugin.path) {
             // 使用自定义插件：通过 Rust 调用 lua54.exe 执行
             try {
-                const result = await invoke('execute_lua_plugin', {
+                const result = await invoke<string>('execute_lua_plugin', {
                     pluginPath: plugin.path,
                     widgets: widgets,
                     options: options || {},
@@ -323,7 +333,7 @@ end`;
                 // 清空调试输出（成功时）
                 luaDebugOutput.value = '';
                 return result || '';
-            } catch (e) {
+            } catch (e: any) {
                 console.error('执行自定义插件失败', e);
                 // 显示详细的错误信息到调试面板
                 const errorMsg = e.message || String(e);
@@ -339,13 +349,13 @@ end`;
 
 
     // 生成插件 Lua 代码（用于导出插件文件）
-    const generatePluginLua = async (resourcePath, pluginPath) => {
+    const generatePluginLua = async (resourcePath: string, pluginPath: string): Promise<string> => {
         if (!widgetsList.value.length) {
             return '';
         }
 
         // 使用选中的插件生成代码
-        const exportOptions = { mode: 'string' };
+        const exportOptions: any = { mode: 'string' };
         if (resourcePath && pluginPath) {
             exportOptions.resourcePath = resourcePath;
             exportOptions.luaPath = pluginPath;
@@ -388,7 +398,7 @@ end`;
             }
         }
 
-        // 找到对应的结束位置（})）
+        // 找到对应的结束位置（})））
         if (startIndex >= 0) {
             let braceCount = 0;
             for (let i = startIndex; i < lines.length; i++) {
@@ -430,10 +440,10 @@ end`;
                 const pluginContent = await readTextFile(pluginPath);
 
                 // 从文件路径提取插件名称
-                const fileName = pluginPath.split(/[/\\]/).pop().replace(/\.lua$/, '');
+                const fileName = pluginPath.split(/[/\\]/).pop()?.replace(/\.lua$/, '') || '';
 
                 // 添加到插件列表
-                const newPlugin = {
+                const newPlugin: ExportPlugin = {
                     id: `custom_${Date.now()}`,
                     name: fileName,
                     type: 'custom',
@@ -459,7 +469,7 @@ end`;
     };
 
     // 编辑插件
-    const editPlugin = async (pluginId) => {
+    const editPlugin = async (pluginId: string) => {
         const plugin = exportPlugins.value.find(p => p.id === pluginId);
         if (!plugin) return;
 
@@ -515,7 +525,7 @@ end`;
                 }
             } else {
                 // 新建插件
-                const newPlugin = {
+                const newPlugin: ExportPlugin = {
                     id: `custom_${Date.now()}`,
                     name: pluginEditorName.value,
                     type: 'custom',
@@ -529,14 +539,14 @@ end`;
             showPluginEditor.value = false;
             await saveExportConfig();
             message.value = '插件已保存';
-        } catch (e) {
+        } catch (e: any) {
             console.error('保存插件失败', e);
             message.value = '保存插件失败';
         }
     };
 
     // 显示确认对话框
-    const showConfirm = (msg, callback) => {
+    const showConfirm = (msg: string, callback: (confirmed: boolean) => void) => {
         confirmDialogMessage.value = msg;
         confirmDialogCallback.value = callback;
         showConfirmDialog.value = true;
@@ -561,7 +571,7 @@ end`;
     };
 
     // 删除插件（通过 ID）
-    const deletePluginById = (pluginId) => {
+    const deletePluginById = (pluginId: string) => {
         const plugin = exportPlugins.value.find(p => p.id === pluginId);
 
         if (!plugin) {
@@ -617,7 +627,7 @@ end`;
             await invoke('open_file_with_default_editor', {
                 filePath: pluginEditorPath.value,
             });
-        } catch (e) {
+        } catch (e: any) {
             console.error('打开文件失败', e);
             message.value = '打开文件失败：' + (e.message || String(e));
         }
@@ -636,15 +646,15 @@ end`;
         }
 
         // 导出前检查：同一个父节点下是否存在重名子控件（非空 name）
-        const dupPairs = [];
-        const byParent = new Map();
+        const dupPairs: Array<{ parentId: string; name: string; count: number }> = [];
+        const byParent = new Map<string, Widget[]>();
         widgetsList.value.forEach((w) => {
             const parentId = w.parentId == null ? '__root__' : String(w.parentId);
             if (!byParent.has(parentId)) byParent.set(parentId, []);
-            byParent.get(parentId).push(w);
+            byParent.get(parentId)!.push(w);
         });
         byParent.forEach((children, pid) => {
-            const nameCount = {};
+            const nameCount: Record<string, number> = {};
             children.forEach((w) => {
                 const n = (w.name || '').trim();
                 if (!n) return;
@@ -673,7 +683,7 @@ end`;
         await saveExportConfig();
 
         showExportPanel.value = false;
-        const messages = [];
+        const messages: string[] = [];
 
         try {
             // 导出资源
@@ -686,7 +696,7 @@ end`;
                         await mkdir(exportResourcesPath.value, { recursive: true });
 
                         // 收集所有控件中使用的资源路径
-                        const usedResourceValues = new Set();
+                        const usedResourceValues = new Set<string>();
                         widgetsList.value.forEach(w => {
                             if (w.image && w.image.trim()) {
                                 usedResourceValues.add(w.image);
@@ -707,7 +717,7 @@ end`;
                             messages.push(`有 ${usedResourceValues.size} 个资源被使用，但这些资源没有本地路径，无法导出`);
                         } else {
                             let copiedCount = 0;
-                            const errors = [];
+                            const errors: string[] = [];
 
                             for (const res of resources) {
                                 try {
@@ -724,11 +734,11 @@ end`;
                                         const fileData = await readFile(res.localPath);
                                         await writeFile(destPath, fileData);
                                         copiedCount++;
-                                    } catch (readErr) {
+                                    } catch (readErr: any) {
                                         errors.push(`资源 ${res.label} 的源文件不存在或无法读取: ${res.localPath}`);
                                         continue;
                                     }
-                                } catch (e) {
+                                } catch (e: any) {
                                     console.error('复制资源文件失败:', res.label, res.localPath, e);
                                     errors.push(`资源 ${res.label} 复制失败: ${e.message}`);
                                 }
@@ -749,7 +759,7 @@ end`;
                                 messages.push(`注意：有 ${notExported} 个使用的资源没有本地路径，未导出`);
                             }
                         }
-                    } catch (e) {
+                    } catch (e: any) {
                         console.error('导出资源失败', e);
                         messages.push('导出资源失败：' + e.message);
                     }
@@ -794,7 +804,7 @@ end`;
                     }
 
                     // 如果同时导出了资源，传递资源路径和Lua路径进行路径转换
-                    const exportOptions = { mode: 'string' };
+                    const exportOptions: any = { mode: 'string' };
                     if (exportResourcesEnabled.value && exportResourcesPath.value && luaFilePath) {
                         exportOptions.resourcePath = exportResourcesPath.value;
                         exportOptions.luaPath = luaFilePath;
@@ -820,7 +830,7 @@ end`;
                             console.warn('发送 F4 到 war3.exe 失败:', e);
                         }
                     }
-                } catch (e) {
+                } catch (e: any) {
                     console.error('导出 Lua 失败', e);
                     messages.push('导出 Lua 失败：' + e.message);
                 }
@@ -830,7 +840,7 @@ end`;
             exportResultMessages.value = messages;
             showExportResultPanel.value = true;
             message.value = messages.join('；');
-        } catch (e) {
+        } catch (e: any) {
             console.error('导出失败', e);
             const errorMsg = '导出失败：' + e.message;
             exportResultMessages.value = [errorMsg];
@@ -885,10 +895,10 @@ end`;
         showLuaDebugPanel,
         luaDebugOutput,
         // 允许外部设置 currentProjectPath（可以是 ref 或函数）
-        setCurrentProjectPath: (pathRef) => {
+        setCurrentProjectPath: (pathRef: CurrentProjectPathRef) => {
             currentProjectPathRef = pathRef;
         },
-        getCurrentProjectPath: () => {
+        getCurrentProjectPath: (): string | null => {
             if (!currentProjectPathRef) return null;
             return typeof currentProjectPathRef === 'function' ? currentProjectPathRef() : (currentProjectPathRef.value || currentProjectPathRef);
         },

@@ -51,11 +51,14 @@
         <div class="menu menu-export" @click="emit('open-export')">
             <span class="menu-title">导出 (F4)</span>
         </div>
+        <div class="menu menu-help" @click="emit('open-help')">
+            <span class="menu-title">帮助</span>
+        </div>
         <span class="menubar-msg" v-if="message">{{ message }}</span>
     </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 const props = defineProps({
     gridSnapEnabled: { type: Boolean, default: false },
     message: { type: String, default: '' },
@@ -82,6 +85,7 @@ const emit = defineEmits([
     'import-resources',
     'open-settings',
     'open-export',
+    'open-help',
 ]);
 </script>
 

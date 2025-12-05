@@ -9,7 +9,7 @@
         @align-top="alignTop" @align-h-center="alignHCenter" @align-v-center="alignVCenter"
         @align-same-width="alignSameWidth" @align-same-height="alignSameHeight" @toggle-grid-snap="toggleGridSnap"
         @import-resources="onImportResourcesClick" @open-settings="showSettings = true"
-        @open-export="showExportPanel = true" />
+        @open-export="showExportPanel = true" @open-help="showKeyboardShortcuts = true" />
 
       <div class="main-row">
         <div class="left panel" :style="{ width: leftWidth + 'px' }" ref="leftPanelRef">
@@ -19,7 +19,6 @@
             <button v-for="t in allWidgetTypes" :key="t.id" @click="addWidgetWithHistory(t.id)">
               {{ t.label }}
             </button>
-            <button class="create-widget-btn" @click="showCreateWidgetPanel = true">新增控件类型…</button>
           </div>
 
           <!-- 层级树 -->
@@ -194,37 +193,6 @@
         @load-custom-plugin="loadCustomPlugin" @create-new-plugin="createNewPlugin" @edit-plugin="handleEditPlugin"
         @delete-plugin="handleDeletePlugin" @do-export="doExport" />
 
-      <!-- 新增控件类型面板 -->
-      <div v-if="showCreateWidgetPanel" class="export-overlay" @click.self="showCreateWidgetPanel = false">
-        <div class="export-dialog">
-          <h3>新增控件类型</h3>
-          <div class="export-body">
-            <div class="export-section">
-              <label for="create-id">类型标识（英文，例如 Edit）：</label>
-              <input id="create-id" type="text" v-model="createWidgetForm.id" placeholder="例如：edit" />
-            </div>
-
-            <div class="export-section">
-              <label for="create-label">显示名称（在控件面板上显示）：</label>
-              <input id="create-label" type="text" v-model="createWidgetForm.label" placeholder="例如：编辑框" />
-            </div>
-
-            <div class="export-section">
-              <label for="create-base">基础类型（决定默认行为）：</label>
-              <select id="create-base" v-model="createWidgetForm.baseType">
-                <option value="panel">面板</option>
-                <option value="button">按钮</option>
-                <option value="text">文本</option>
-                <option value="model">模型</option>
-              </select>
-            </div>
-          </div>
-          <div class="export-footer">
-            <button @click="showCreateWidgetPanel = false">取消</button>
-            <button @click="handleCreateWidgetConfirm">创建类型</button>
-          </div>
-        </div>
-      </div>
 
       <!-- 导出结果面板 -->
       <ExportResultDialog :show="showExportResultPanel" :messages="exportResultMessages"
@@ -271,14 +239,17 @@
     <PluginEditorDialog :show="showPluginEditor" v-model:name="pluginEditorName" v-model:content="pluginEditorContent"
       :path="pluginEditorPath" @close="showPluginEditor = false" @save="savePluginEditor"
       @open-default-editor="openPluginWithDefaultEditor" />
+
+    <!-- 快捷键帮助对话框 -->
+    <KeyboardShortcutsDialog v-model:visible="showKeyboardShortcuts" />
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, reactive, computed, onMounted, nextTick, onBeforeUnmount, watch } from 'vue';
 import { open as tauriOpen, save as tauriSave } from '@tauri-apps/plugin-dialog';
 import { readTextFile, writeTextFile, readFile, writeFile, mkdir, readDir } from '@tauri-apps/plugin-fs';
-import { decodeTgaToDataUrl } from './utils/tgaDecoder.js';
+import { decodeTgaToDataUrl } from './utils/tgaDecoder';
 import SettingsDialog from './components/SettingsDialog.vue';
 import WelcomeScreen from './components/WelcomeScreen.vue';
 import CloseProjectDialog from './components/CloseProjectDialog.vue';
@@ -287,33 +258,37 @@ import ExportPanel from './components/ExportPanel.vue';
 import ExportResultDialog from './components/ExportResultDialog.vue';
 import LuaDebugDialog from './components/LuaDebugDialog.vue';
 import PluginEditorDialog from './components/PluginEditorDialog.vue';
+import KeyboardShortcutsDialog from './components/KeyboardShortcutsDialog.vue';
 import TopMenuBar from './components/TopMenuBar.vue';
 import PropertiesPanel from './components/PropertiesPanel.vue';
-import { useSettings } from './composables/useSettings.js';
-import { useCanvas } from './composables/useCanvas.js';
-import { useRuler } from './composables/useRuler.js';
-import { useGrid } from './composables/useGrid.js';
-import { useWidgets } from './composables/useWidgets.js';
-import { useResources } from './composables/useResources.js';
-import { useResourceManager } from './composables/useResourceManager.js';
-import { useHistory } from './composables/useHistory.js';
-import { useClipboard } from './composables/useClipboard.js';
-import { useAlignment } from './composables/useAlignment.js';
-import { useContextMenu } from './composables/useContextMenu.js';
-import { useBatchEdit } from './composables/useBatchEdit.js';
-import { useRecentProjects } from './composables/useRecentProjects.js';
-import { useUiZoom } from './composables/useUiZoom.js';
-import { usePanelResize } from './composables/usePanelResize.js';
-import { useProjectFile } from './composables/useProjectFile.js';
-import { useExport } from './composables/useExport.js';
-import { useHierarchyTree } from './composables/useHierarchyTree.js';
-import { useKeyboard } from './composables/useKeyboard.js';
-import { useCanvasInteraction } from './composables/useCanvasInteraction.js';
-import { useLuaExport } from './composables/useLuaExport.js';
-import { useAnimations } from './composables/useAnimations.js';
+import { useSettings } from './composables/useSettings';
+import { useCanvas } from './composables/useCanvas';
+import { useRuler } from './composables/useRuler';
+import { useGrid } from './composables/useGrid';
+import { useWidgets } from './composables/useWidgets';
+import { useResources } from './composables/useResources';
+import { useResourceManager } from './composables/useResourceManager';
+import { useHistory } from './composables/useHistory';
+import { useClipboard } from './composables/useClipboard';
+import { useAlignment } from './composables/useAlignment';
+import { useContextMenu } from './composables/useContextMenu';
+import { useBatchEdit } from './composables/useBatchEdit';
+import { useRecentProjects } from './composables/useRecentProjects';
+import { useUiZoom } from './composables/useUiZoom';
+import { usePanelResize } from './composables/usePanelResize';
+import { useProjectFile } from './composables/useProjectFile';
+import { useExport } from './composables/useExport';
+import { useHierarchyTree } from './composables/useHierarchyTree';
+import { useKeyboard } from './composables/useKeyboard';
+import { useCanvasInteraction } from './composables/useCanvasInteraction';
+import { useLuaExport } from './composables/useLuaExport';
+import { useAnimations } from './composables/useAnimations';
 
 // 使用组合式函数
 const { showSettings, settings, saveSettings, resetSettings, loadSettings } = useSettings();
+
+// 快捷键帮助对话框显示状态
+const showKeyboardShortcuts = ref(false);
 const canvas = useCanvas(settings);
 const { rulerStep, rulerXTicks, rulerYTicks } = useRuler(settings, canvas.canvasSize, canvas.canvasScale, canvas.panX, canvas.panY);
 const { gridMode, gridSnapEnabled, gridStep, gridXTicks, gridYTicks, toggleGridSnap } = useGrid(settings);
@@ -510,19 +485,8 @@ const baseWidgetTypes = [
   { id: 'model', label: '模型', baseType: 'model' },
 ];
 
-// 自定义控件类型（用户通过“新增控件类型”添加）
-const customWidgetTypes = ref([]);
-
 // 所有可用的控件类型（用于左侧控件面板按钮）
-const allWidgetTypes = computed(() => [...baseWidgetTypes, ...customWidgetTypes.value]);
-
-// 新增控件类型面板状态
-const showCreateWidgetPanel = ref(false);
-const createWidgetForm = reactive({
-  id: '',
-  label: '',
-  baseType: 'panel',
-});
+const allWidgetTypes = computed(() => baseWidgetTypes);
 
 // 编辑插件（包装函数，确保传递正确的值）
 const handleEditPlugin = () => {
@@ -1053,39 +1017,6 @@ const {
   applyBatchImage,
 } = batchEdit;
 
-// 新增控件类型：根据对话框表单创建一个新的类型按钮
-const handleCreateWidgetConfirm = () => {
-  const id = (createWidgetForm.id || '').trim();
-  const label = (createWidgetForm.label || '').trim();
-  const baseType = createWidgetForm.baseType || 'panel';
-
-  if (!id) {
-    message.value = '请填写类型标识（例如 edit）';
-    return;
-  }
-  if (!label) {
-    message.value = '请填写显示名称';
-    return;
-  }
-
-  const exists = [...baseWidgetTypes, ...customWidgetTypes.value].some((t) => t.id === id);
-  if (exists) {
-    message.value = '该类型标识已存在，请换一个';
-    return;
-  }
-
-  customWidgetTypes.value = [
-    ...customWidgetTypes.value,
-    { id, label, baseType },
-  ];
-
-  // 重置表单
-  createWidgetForm.id = '';
-  createWidgetForm.label = '';
-  createWidgetForm.baseType = 'panel';
-
-  showCreateWidgetPanel.value = false;
-};
 
 // 资源缩略图悬浮预览
 // 所有资源管理器相关函数已移动到 useResourceManager composable

@@ -1,5 +1,5 @@
 // TGA 解码工具函数
-export async function decodeTgaToDataUrl(file) {
+export async function decodeTgaToDataUrl(file: File | Blob): Promise<string> {
     const buffer = await file.arrayBuffer();
     const view = new DataView(buffer);
 
@@ -78,6 +78,9 @@ export async function decodeTgaToDataUrl(file) {
     canvas.width = width;
     canvas.height = height;
     const ctx = canvas.getContext('2d');
+    if (!ctx) {
+        throw new Error('无法获取 canvas 上下文');
+    }
     const imageData = new ImageData(rgba, width, height);
     ctx.putImageData(imageData, 0, 0);
     return canvas.toDataURL('image/png');

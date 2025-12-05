@@ -4,6 +4,11 @@ import vue from '@vitejs/plugin-vue';
 export default defineConfig({
     plugins: [vue()],
     base: './',
+    resolve: {
+        alias: {
+            '@': new URL('./src', import.meta.url).pathname,
+        },
+    },
 });
 
 

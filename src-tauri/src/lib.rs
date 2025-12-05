@@ -395,14 +395,12 @@ async fn send_f4_to_war3() -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
         use windows::Win32::{
-            Foundation::{BOOL, HWND, LPARAM, WPARAM},
+            Foundation::{BOOL, HWND, LPARAM},
             System::Diagnostics::ToolHelp::{
                 CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W,
                 TH32CS_SNAPPROCESS,
             },
-            UI::WindowsAndMessaging::{
-                EnumWindows, GetWindowThreadProcessId, PostMessageW, VK_F4, WM_KEYDOWN, WM_KEYUP,
-            },
+            UI::WindowsAndMessaging::EnumWindows,
         };
 
         unsafe {
@@ -414,7 +412,7 @@ async fn send_f4_to_war3() -> Result<(), String> {
             entry.dwSize = std::mem::size_of::<PROCESSENTRY32W>() as u32;
 
             let mut target_pid: u32 = 0;
-            if Process32FirstW(snapshot, &mut entry).as_bool() {
+            if Process32FirstW(snapshot, &mut entry).is_ok() {
                 loop {
                     let exe_name = String::from_utf16_lossy(
                         &entry.szExeFile
@@ -427,7 +425,7 @@ async fn send_f4_to_war3() -> Result<(), String> {
                         break;
                     }
 
-                    if !Process32NextW(snapshot, &mut entry).as_bool() {
+                    if Process32NextW(snapshot, &mut entry).is_err() {
                         break;
                     }
                 }
@@ -439,10 +437,12 @@ async fn send_f4_to_war3() -> Result<(), String> {
 
             // 在 EnumWindows 回调中给属于该进程的窗口发送 F4
             extern "system" fn enum_windows_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
-                use windows::Win32::Foundation::{BOOL, HWND, LPARAM, WPARAM};
-                use windows::Win32::UI::WindowsAndMessaging::GetWindowThreadProcessId;
-                use windows::Win32::UI::WindowsAndMessaging::{
-                    PostMessageW, VK_F4, WM_KEYDOWN, WM_KEYUP,
+                use windows::Win32::{
+                    Foundation::{BOOL, LPARAM, WPARAM},
+                    UI::{
+                        Input::KeyboardAndMouse::VK_F4,
+                        WindowsAndMessaging::{GetWindowThreadProcessId, PostMessageW, WM_KEYDOWN, WM_KEYUP},
+                    },
                 };
 
                 let target_pid = lparam.0 as u32;

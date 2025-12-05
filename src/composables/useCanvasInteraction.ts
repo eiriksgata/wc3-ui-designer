@@ -1,33 +1,34 @@
-import { ref } from 'vue';
+import { ref, type Ref } from 'vue';
+import type { Widget } from '../types';
 
 export function useCanvasInteraction(
-    canvasRef,
-    canvasScale,
-    panX,
-    panY,
-    isSpacePressed,
-    isPanning,
-    panStart,
-    widgetsList,
-    selectedIds,
-    draggingId,
-    dragOffset,
-    resizingId,
-    resizeStart,
-    isSelecting,
-    selectStart,
-    selectCurrent,
-    gridSnapEnabled,
-    gridStep,
-    moveWidgetWithChildren,
-    pushHistory,
-    uiZoom
+    canvasRef: Ref<HTMLElement | null>,
+    canvasScale: Ref<number>,
+    panX: Ref<number>,
+    panY: Ref<number>,
+    isSpacePressed: Ref<boolean>,
+    isPanning: Ref<boolean>,
+    panStart: Ref<{ x: number; y: number; panX: number; panY: number }>,
+    widgetsList: Ref<Widget[]>,
+    selectedIds: Ref<number[]>,
+    draggingId: Ref<number | null>,
+    dragOffset: Ref<{ x: number; y: number }>,
+    resizingId: Ref<number | null>,
+    resizeStart: Ref<{ mouseX: number; mouseY: number; w: number; h: number }>,
+    isSelecting: Ref<boolean>,
+    selectStart: Ref<{ x: number; y: number }>,
+    selectCurrent: Ref<{ x: number; y: number }>,
+    gridSnapEnabled: Ref<boolean>,
+    gridStep: Ref<number>,
+    moveWidgetWithChildren: (rootId: number, dx: number, dy: number) => void,
+    pushHistory: () => void,
+    uiZoom: Ref<number>
 ) {
     // 选择框性能优化：使用 requestAnimationFrame 节流
-    const selectionRectRef = ref(null);
-    let rafId = null;
+    const selectionRectRef = ref<HTMLElement | null>(null);
+    let rafId: number | null = null;
 
-    const startDrag = (widget, ev) => {
+    const startDrag = (widget: Widget, ev: MouseEvent) => {
         const canvas = canvasRef.value;
         if (!canvas || !widget) return;
 
@@ -81,7 +82,7 @@ export function useCanvasInteraction(
         };
     };
 
-    const startResize = (widget, ev) => {
+    const startResize = (widget: Widget, ev: MouseEvent) => {
         const canvas = canvasRef.value;
         if (!canvas || !widget) return;
 
@@ -108,7 +109,7 @@ export function useCanvasInteraction(
         selectedIds.value = [widget.id];
     };
 
-    const onCanvasMouseDown = (ev) => {
+    const onCanvasMouseDown = (ev: MouseEvent) => {
         const canvas = canvasRef.value;
         if (!canvas) return;
 
@@ -124,7 +125,8 @@ export function useCanvasInteraction(
             return;
         }
 
-        if (ev.target === canvas || ev.target.classList.contains('canvas-inner')) {
+        const target = ev.target as HTMLElement;
+        if (target === canvas || target.classList.contains('canvas-inner')) {
             const rect = canvas.getBoundingClientRect();
             const uiScale = uiZoom.value || 1;
             const screenX = (ev.clientX - rect.left) / uiScale;
@@ -139,7 +141,7 @@ export function useCanvasInteraction(
         }
     };
 
-    const onCanvasMouseMove = (ev) => {
+    const onCanvasMouseMove = (ev: MouseEvent) => {
         const canvas = canvasRef.value;
         if (!canvas) return;
 
@@ -219,7 +221,7 @@ export function useCanvasInteraction(
             const selectedSet = new Set(selectedIds.value);
             // 多选时：一起移动所有选中的"根"控件（父节点不在选中集合中）
             if (selectedSet.size > 1 && selectedSet.has(draggingId.value)) {
-                const rootIds = [];
+                const rootIds: number[] = [];
                 selectedIds.value.forEach((id) => {
                     const item = widgetsList.value.find((ww) => ww.id === id);
                     if (!item) return;
@@ -252,7 +254,7 @@ export function useCanvasInteraction(
             const y1 = Math.min(selectStart.value.y, selectCurrent.value.y);
             const x2 = Math.max(selectStart.value.x, selectCurrent.value.x);
             const y2 = Math.max(selectStart.value.y, selectCurrent.value.y);
-            const ids = [];
+            const ids: number[] = [];
             widgetsList.value.forEach((w) => {
                 const wx1 = w.x;
                 const wy1 = w.y;

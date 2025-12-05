@@ -1,7 +1,12 @@
-import { ref } from 'vue';
+import { ref, type Ref } from 'vue';
+
+interface RecentProject {
+    path: string;
+    name: string;
+}
 
 export function useRecentProjects() {
-    const recentProjects = ref([]); // { path, name }[]
+    const recentProjects: Ref<RecentProject[]> = ref([]); // { path, name }[]
     const MAX_RECENT_PROJECTS = 5;
     const RECENT_STORAGE_KEY = 'frame_ui_recent_projects';
 
@@ -9,7 +14,7 @@ export function useRecentProjects() {
         try {
             const raw = window.localStorage.getItem(RECENT_STORAGE_KEY);
             if (!raw) return;
-            const arr = JSON.parse(raw);
+            const arr = JSON.parse(raw) as RecentProject[];
             if (Array.isArray(arr)) {
                 recentProjects.value = arr;
             }
@@ -29,7 +34,7 @@ export function useRecentProjects() {
         }
     };
 
-    const addRecentProject = (filePath) => {
+    const addRecentProject = (filePath: string) => {
         if (!filePath) return;
         const name = filePath.split(/[/\\]/).pop() || filePath;
         // 去重：先删掉已有同路径，再插入到最前

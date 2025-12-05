@@ -1,12 +1,13 @@
-import { ref, computed } from 'vue';
+import { ref, computed, type Ref } from 'vue';
+import type { Widget } from '../types';
 
 export function useWidgets() {
-    const widgets = ref([]);
+    const widgets: Ref<Widget[]> = ref([]);
     const nextId = ref(1);
-    const selectedIds = ref([]);
-    const draggingId = ref(null);
+    const selectedIds = ref<number[]>([]);
+    const draggingId = ref<number | null>(null);
     const dragOffset = ref({ x: 0, y: 0 });
-    const resizingId = ref(null);
+    const resizingId = ref<number | null>(null);
     const resizeStart = ref({ mouseX: 0, mouseY: 0, w: 0, h: 0 });
     const isSelecting = ref(false);
     const selectStart = ref({ x: 0, y: 0 });
@@ -25,8 +26,8 @@ export function useWidgets() {
 
     // 渲染顺序：父节点在前，子节点在后（子节点显示在父节点上层）
     const renderWidgets = computed(() => {
-        const result = [];
-        const visit = (w) => {
+        const result: Widget[] = [];
+        const visit = (w: Widget) => {
             result.push(w);
             widgets.value
                 .filter((child) => child.parentId === w.id)
@@ -56,7 +57,7 @@ export function useWidgets() {
         };
     });
 
-    const addWidget = (type) => {
+    const addWidget = (type: string) => {
         const id = nextId.value++;
         let defaultText = '';
         if (type === 'text') {
@@ -96,8 +97,8 @@ export function useWidgets() {
         selectedIds.value = [id];
     };
 
-    const moveWidgetWithChildren = (rootId, dx, dy) => {
-        const move = (id) => {
+    const moveWidgetWithChildren = (rootId: number, dx: number, dy: number) => {
+        const move = (id: number) => {
             const node = widgets.value.find((w) => w.id === id);
             if (!node) return;
             const newX = (node.x || 0) + (dx || 0);
@@ -121,7 +122,7 @@ export function useWidgets() {
 
     const deleteSelected = () => {
         const toDelete = new Set(selectedIds.value);
-        const deleteRecursive = (id) => {
+        const deleteRecursive = (id: number) => {
             toDelete.add(id);
             widgets.value
                 .filter((w) => w.parentId === id)

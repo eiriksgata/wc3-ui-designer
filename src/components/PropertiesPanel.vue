@@ -322,7 +322,7 @@
     </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 const props = defineProps({
     rightWidth: { type: Number, default: 260 },
     selectedWidget: { type: Object, default: null },

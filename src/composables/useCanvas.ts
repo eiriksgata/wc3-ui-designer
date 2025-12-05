@@ -1,7 +1,8 @@
-import { ref, computed } from 'vue';
+import { ref, computed, type Ref } from 'vue';
+import type { Settings } from '../types';
 
-export function useCanvas(settings) {
-    const canvasRef = ref(null);
+export function useCanvas(settings: Ref<Settings>) {
+    const canvasRef = ref<HTMLElement | null>(null);
     const canvasSize = ref({ width: 0, height: 0 });
     const canvasScale = ref(1);
     const panX = ref(0);
@@ -13,7 +14,7 @@ export function useCanvas(settings) {
     const canvasLogicalWidth = computed(() => settings.value.canvasWidth);
     const canvasLogicalHeight = computed(() => settings.value.canvasHeight);
 
-    const onCanvasWheel = (ev) => {
+    const onCanvasWheel = (ev: WheelEvent) => {
         // 只有按 Ctrl 时才缩放画布，并阻止浏览器默认缩放
         if (ev.ctrlKey || ev.metaKey) {
             ev.preventDefault();

@@ -1,33 +1,52 @@
-import { ref } from 'vue';
+import { ref, type Ref } from 'vue';
 import { open as tauriOpen, save as tauriSave } from '@tauri-apps/plugin-dialog';
 import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs';
+import type { Widget, Settings, ImageResource, Animation } from '../types';
+
+interface ExportPlugin {
+    id: string;
+    name: string;
+    type: 'builtin' | 'custom';
+    path: string | null;
+}
+
+interface ExportConfig {
+    exportResourcesEnabled: boolean;
+    exportResourcesPath: string;
+    exportLuaEnabled: boolean;
+    exportLuaPath: string;
+    exportPluginEnabled: boolean;
+    exportPluginPath: string;
+    selectedExportPlugin: string;
+    exportPlugins: ExportPlugin[];
+}
 
 export function useProjectFile(
-    widgetsList,
-    selectedIds,
-    nextId,
-    settings,
-    imageResources,
-    animations,
-    nextAnimIdAnim,
-    exportResourcesEnabled,
-    exportResourcesPath,
-    exportLuaEnabled,
-    exportLuaPath,
-    exportPluginEnabled,
-    exportPluginPath,
-    selectedExportPlugin,
-    exportPlugins,
-    pushHistory,
-    refreshResourcePreviewsFromLocal,
-    addRecentProject,
-    message,
-    showWelcome
+    widgetsList: Ref<Widget[]>,
+    selectedIds: Ref<number[]>,
+    nextId: Ref<number>,
+    settings: Ref<Settings>,
+    imageResources: Ref<ImageResource[]>,
+    animations: Ref<Animation[]>,
+    nextAnimIdAnim: Ref<number>,
+    exportResourcesEnabled: Ref<boolean>,
+    exportResourcesPath: Ref<string>,
+    exportLuaEnabled: Ref<boolean>,
+    exportLuaPath: Ref<string>,
+    exportPluginEnabled: Ref<boolean>,
+    exportPluginPath: Ref<string>,
+    selectedExportPlugin: Ref<string>,
+    exportPlugins: Ref<ExportPlugin[]>,
+    pushHistory: () => void,
+    refreshResourcePreviewsFromLocal: () => Promise<void>,
+    addRecentProject: (filePath: string) => void,
+    message: Ref<string>,
+    showWelcome: Ref<boolean>
 ) {
-    const projectFileInput = ref(null);
-    const currentProjectPath = ref(null);
+    const projectFileInput = ref<HTMLInputElement | null>(null);
+    const currentProjectPath = ref<string | null>(null);
 
-    const buildProjectJson = () => {
+    const buildProjectJson = (): string => {
         const data = {
             widgets: widgetsList.value,
             settings: settings.value,
@@ -54,7 +73,7 @@ export function useProjectFile(
     };
 
     // 返回 true 表示确实保存到磁盘；false 表示用户取消或保存失败
-    const saveProjectToFile = async () => {
+    const saveProjectToFile = async (): Promise<boolean> => {
         const json = buildProjectJson();
 
         try {
@@ -67,7 +86,7 @@ export function useProjectFile(
                     ],
                     defaultPath: 'ui-project.uiproj',
                 });
-                // 用户在保存对话框点了“取消”
+                // 用户在保存对话框点了"取消"
                 if (!filePath) {
                     return false;
                 }
@@ -76,15 +95,15 @@ export function useProjectFile(
             await writeTextFile(filePath, json);
             message.value = '项目已保存到文件：' + filePath;
             return true;
-        } catch (e) {
+        } catch (e: any) {
             console.error('保存项目失败', e);
-            message.value = '保存项目失败：' + e.message;
+            message.value = '保存项目失败：' + (e.message || String(e));
             return false;
         }
     };
 
     // 另存为：返回 true 表示保存成功，false 表示取消或失败
-    const saveProjectAsFile = async () => {
+    const saveProjectAsFile = async (): Promise<boolean> => {
         const json = buildProjectJson();
 
         try {
@@ -101,23 +120,23 @@ export function useProjectFile(
             addRecentProject(filePath);
             message.value = '项目已另存为：' + filePath;
             return true;
-        } catch (e) {
+        } catch (e: any) {
             console.error('另存为失败', e);
-            message.value = '另存为失败：' + e.message;
+            message.value = '另存为失败：' + (e.message || String(e));
             return false;
         }
     };
 
-    const openProjectFromPath = async (filePath) => {
+    const openProjectFromPath = async (filePath: string) => {
         try {
             const json = await readTextFile(filePath);
-            const data = JSON.parse(json);
+            const data = JSON.parse(json) as any;
             if (Array.isArray(data.widgets)) {
                 pushHistory();
-                widgetsList.value = data.widgets;
+                widgetsList.value = data.widgets as Widget[];
                 selectedIds.value = [];
                 nextId.value =
-                    (data.widgets.reduce((m, w) => Math.max(m, w.id || 0), 0) || 0) + 1;
+                    (data.widgets.reduce((m: number, w: Widget) => Math.max(m, w.id || 0), 0) || 0) + 1;
             }
             if (data.settings) {
                 settings.value = {
@@ -126,7 +145,7 @@ export function useProjectFile(
                 };
             }
             if (Array.isArray(data.resources)) {
-                imageResources.value = data.resources.map((r) => ({
+                imageResources.value = data.resources.map((r: any) => ({
                     label: r.label,
                     value: r.value,
                     localPath: r.localPath || '',
@@ -136,33 +155,34 @@ export function useProjectFile(
             }
             // 恢复动画数据
             if (Array.isArray(data.animations)) {
-                animations.value = data.animations;
+                animations.value = data.animations as Animation[];
                 nextAnimIdAnim.value =
-                    (data.animations.reduce((m, a) => Math.max(m, a.id || 0), 0) || 0) + 1;
+                    (data.animations.reduce((m: number, a: Animation) => Math.max(m, a.id || 0), 0) || 0) + 1;
             } else {
                 animations.value = [];
                 nextAnimIdAnim.value = 1;
             }
             // 恢复导出配置
             if (data.exportConfig) {
-                exportResourcesEnabled.value = data.exportConfig.exportResourcesEnabled ?? false;
-                exportResourcesPath.value = data.exportConfig.exportResourcesPath || '';
-                exportLuaEnabled.value = data.exportConfig.exportLuaEnabled ?? true;
-                exportLuaPath.value = data.exportConfig.exportLuaPath || '';
-                exportPluginEnabled.value = data.exportConfig.exportPluginEnabled ?? false;
-                exportPluginPath.value = data.exportConfig.exportPluginPath || '';
-                if (data.exportConfig.selectedExportPlugin) {
-                    selectedExportPlugin.value = data.exportConfig.selectedExportPlugin;
+                const config = data.exportConfig as ExportConfig;
+                exportResourcesEnabled.value = config.exportResourcesEnabled ?? false;
+                exportResourcesPath.value = config.exportResourcesPath || '';
+                exportLuaEnabled.value = config.exportLuaEnabled ?? true;
+                exportLuaPath.value = config.exportLuaPath || '';
+                exportPluginEnabled.value = config.exportPluginEnabled ?? false;
+                exportPluginPath.value = config.exportPluginPath || '';
+                if (config.selectedExportPlugin) {
+                    selectedExportPlugin.value = config.selectedExportPlugin;
                 }
-                if (Array.isArray(data.exportConfig.exportPlugins)) {
-                    exportPlugins.value = data.exportConfig.exportPlugins;
+                if (Array.isArray(config.exportPlugins)) {
+                    exportPlugins.value = config.exportPlugins;
                 }
             }
             currentProjectPath.value = filePath;
             addRecentProject(filePath);
             showWelcome.value = false;
             message.value = '项目已从文件载入：' + filePath;
-        } catch (e) {
+        } catch (e: any) {
             console.error('载入项目失败', e);
             message.value = '载入项目失败';
         }
@@ -181,28 +201,28 @@ export function useProjectFile(
             if (!selected) return;
             const filePath = Array.isArray(selected) ? selected[0] : selected;
             await openProjectFromPath(filePath);
-        } catch (e) {
+        } catch (e: any) {
             console.error('打开项目失败', e);
             message.value = '打开项目失败：' + (e.message || String(e));
         }
     };
 
-    const handleProjectFileSelected = (ev) => {
-        const input = ev.target;
+    const handleProjectFileSelected = (ev: Event) => {
+        const input = ev.target as HTMLInputElement;
         const file = input.files && input.files[0];
         if (!file) return;
 
         const reader = new FileReader();
         reader.onload = () => {
             try {
-                const json = reader.result;
-                const data = JSON.parse(json);
+                const json = reader.result as string;
+                const data = JSON.parse(json) as any;
                 if (Array.isArray(data.widgets)) {
                     pushHistory();
-                    widgetsList.value = data.widgets;
+                    widgetsList.value = data.widgets as Widget[];
                     selectedIds.value = [];
                     nextId.value =
-                        (data.widgets.reduce((m, w) => Math.max(m, w.id || 0), 0) || 0) + 1;
+                        (data.widgets.reduce((m: number, w: Widget) => Math.max(m, w.id || 0), 0) || 0) + 1;
                 }
                 if (data.settings) {
                     settings.value = {
@@ -211,7 +231,7 @@ export function useProjectFile(
                     };
                 }
                 if (Array.isArray(data.resources)) {
-                    imageResources.value = data.resources.map((r) => ({
+                    imageResources.value = data.resources.map((r: any) => ({
                         label: r.label,
                         value: r.value,
                         localPath: r.localPath || '',
@@ -221,26 +241,27 @@ export function useProjectFile(
                 }
                 // 恢复动画数据
                 if (Array.isArray(data.animations)) {
-                    animations.value = data.animations;
+                    animations.value = data.animations as Animation[];
                     nextAnimIdAnim.value =
-                        (data.animations.reduce((m, a) => Math.max(m, a.id || 0), 0) || 0) + 1;
+                        (data.animations.reduce((m: number, a: Animation) => Math.max(m, a.id || 0), 0) || 0) + 1;
                 } else {
                     animations.value = [];
                     nextAnimIdAnim.value = 1;
                 }
                 // 恢复导出配置
                 if (data.exportConfig) {
-                    exportResourcesEnabled.value = data.exportConfig.exportResourcesEnabled ?? false;
-                    exportResourcesPath.value = data.exportConfig.exportResourcesPath || '';
-                    exportLuaEnabled.value = data.exportConfig.exportLuaEnabled ?? true;
-                    exportLuaPath.value = data.exportConfig.exportLuaPath || '';
-                    exportPluginEnabled.value = data.exportConfig.exportPluginEnabled ?? false;
-                    exportPluginPath.value = data.exportConfig.exportPluginPath || '';
-                    if (data.exportConfig.selectedExportPlugin) {
-                        selectedExportPlugin.value = data.exportConfig.selectedExportPlugin;
+                    const config = data.exportConfig as ExportConfig;
+                    exportResourcesEnabled.value = config.exportResourcesEnabled ?? false;
+                    exportResourcesPath.value = config.exportResourcesPath || '';
+                    exportLuaEnabled.value = config.exportLuaEnabled ?? true;
+                    exportLuaPath.value = config.exportLuaPath || '';
+                    exportPluginEnabled.value = config.exportPluginEnabled ?? false;
+                    exportPluginPath.value = config.exportPluginPath || '';
+                    if (config.selectedExportPlugin) {
+                        selectedExportPlugin.value = config.selectedExportPlugin;
                     }
-                    if (Array.isArray(data.exportConfig.exportPlugins)) {
-                        exportPlugins.value = data.exportConfig.exportPlugins;
+                    if (Array.isArray(config.exportPlugins)) {
+                        exportPlugins.value = config.exportPlugins;
                     }
                 }
                 currentProjectPath.value = null; // 当前通过 input 打开的项目不记录磁盘路径
@@ -306,7 +327,7 @@ export function useProjectFile(
         await loadProjectFromFile();
     };
 
-    const openRecentProject = async (filePath) => {
+    const openRecentProject = async (filePath: string) => {
         await openProjectFromPath(filePath);
     };
 

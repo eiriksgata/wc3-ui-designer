@@ -46,7 +46,7 @@
     </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 const props = defineProps({
     height: { type: Number, default: 200 },
     imageResources: { type: Array, default: () => [] },

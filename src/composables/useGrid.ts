@@ -1,6 +1,7 @@
-import { ref, computed } from 'vue';
+import { ref, computed, type Ref } from 'vue';
+import type { Settings } from '../types';
 
-export function useGrid(settings) {
+export function useGrid(settings: Ref<Settings>) {
     const gridMode = ref(0); // 0=关闭，1=128*128，2=64*64，3=32*32
     const gridSnapEnabled = ref(true);
 

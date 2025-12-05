@@ -1,17 +1,18 @@
-import { ref } from 'vue';
+import { ref, type Ref } from 'vue';
+import type { Widget } from '../types';
 
-export function useHistory(widgetsList, selectedIds) {
+export function useHistory(widgetsList: Ref<Widget[]>, selectedIds: Ref<number[]>) {
     // 历史记录栈
-    const historyStack = ref([]);
-    const futureStack = ref([]);
+    const historyStack = ref<string[]>([]);
+    const futureStack = ref<string[]>([]);
 
     // 创建布局快照
-    const snapshotLayout = () => JSON.stringify(widgetsList.value);
+    const snapshotLayout = (): string => JSON.stringify(widgetsList.value);
 
     // 恢复布局
-    const restoreLayout = (snap) => {
+    const restoreLayout = (snap: string) => {
         try {
-            const arr = JSON.parse(snap);
+            const arr = JSON.parse(snap) as Widget[];
             if (Array.isArray(arr)) {
                 widgetsList.value = arr;
                 selectedIds.value = [];
@@ -35,8 +36,10 @@ export function useHistory(widgetsList, selectedIds) {
         if (!historyStack.value.length) return;
         const current = snapshotLayout();
         const prev = historyStack.value.pop();
-        futureStack.value.push(current);
-        restoreLayout(prev);
+        if (prev) {
+            futureStack.value.push(current);
+            restoreLayout(prev);
+        }
     };
 
     // 重做
@@ -44,8 +47,10 @@ export function useHistory(widgetsList, selectedIds) {
         if (!futureStack.value.length) return;
         const current = snapshotLayout();
         const next = futureStack.value.pop();
-        historyStack.value.push(current);
-        restoreLayout(next);
+        if (next) {
+            historyStack.value.push(current);
+            restoreLayout(next);
+        }
     };
 
     // 清空历史记录

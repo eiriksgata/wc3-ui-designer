@@ -1,4 +1,5 @@
-import { ref, computed } from 'vue';
+import { ref, computed, type Ref } from 'vue';
+import type { Widget, Animation } from '../types';
 
 /**
  * 动画系统（仅编辑器）
@@ -8,100 +9,100 @@ import { ref, computed } from 'vue';
 // 对应 lapi.TWEEN_TYPE 的缓动函数集合（t ∈ [0,1]）
 const Easing = {
     // 0 线性
-    linear(t) {
+    linear(t: number): number {
         return t;
     },
     // 1 / 2 / 3 正弦 出 / 入 / 出入
-    sineIn(t) {
+    sineIn(t: number): number {
         return 1 - Math.cos((t * Math.PI) / 2);
     },
-    sineOut(t) {
+    sineOut(t: number): number {
         return Math.sin((t * Math.PI) / 2);
     },
-    sineInOut(t) {
+    sineInOut(t: number): number {
         return -(Math.cos(Math.PI * t) - 1) / 2;
     },
     // 4 / 5 / 6 Quad 二次方
-    quadIn(t) {
+    quadIn(t: number): number {
         return t * t;
     },
-    quadOut(t) {
+    quadOut(t: number): number {
         return 1 - (1 - t) * (1 - t);
     },
-    quadInOut(t) {
+    quadInOut(t: number): number {
         return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
     },
     // 7 / 8 / 9 Cubic 三次方
-    cubicIn(t) {
+    cubicIn(t: number): number {
         return t * t * t;
     },
-    cubicOut(t) {
+    cubicOut(t: number): number {
         return 1 - Math.pow(1 - t, 3);
     },
-    cubicInOut(t) {
+    cubicInOut(t: number): number {
         return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
     },
     // 10 / 11 / 12 Quart 四次方
-    quartIn(t) {
+    quartIn(t: number): number {
         return t * t * t * t;
     },
-    quartOut(t) {
+    quartOut(t: number): number {
         return 1 - Math.pow(1 - t, 4);
     },
-    quartInOut(t) {
+    quartInOut(t: number): number {
         return t < 0.5
             ? 8 * Math.pow(t, 4)
             : 1 - Math.pow(-2 * t + 2, 4) / 2;
     },
     // 13 / 14 / 15 Quint 五次方
-    quintIn(t) {
+    quintIn(t: number): number {
         return t * t * t * t * t;
     },
-    quintOut(t) {
+    quintOut(t: number): number {
         return 1 - Math.pow(1 - t, 5);
     },
-    quintInOut(t) {
+    quintInOut(t: number): number {
         return t < 0.5
             ? 16 * Math.pow(t, 5)
             : 1 - Math.pow(-2 * t + 2, 5) / 2;
     },
     // 16 / 17 / 18 Expo 指数
-    expoIn(t) {
+    expoIn(t: number): number {
         return t === 0 ? 0 : Math.pow(2, 10 * (t - 1));
     },
-    expoOut(t) {
+    expoOut(t: number): number {
         return t === 1 ? 1 : 1 - Math.pow(2, -10 * t);
     },
-    expoInOut(t) {
+    expoInOut(t: number): number {
         if (t === 0 || t === 1) return t;
         if (t < 0.5) return Math.pow(2, 20 * t - 11);
         return 1 - Math.pow(2, -20 * t + 11);
     },
     // 19 / 20 / 21 Circ 圆形
-    circIn(t) {
+    circIn(t: number): number {
         return 1 - Math.sqrt(1 - t * t);
     },
-    circOut(t) {
+    circOut(t: number): number {
         return Math.sqrt(1 - (t - 1) * (t - 1));
     },
-    circInOut(t) {
+    circInOut(t: number): number {
         if (t < 0.5) {
             return (1 - Math.sqrt(1 - 4 * t * t)) / 2;
         }
         return (Math.sqrt(1 - Math.pow(-2 * t + 2, 2)) + 1) / 2;
     },
     // 22 / 23 / 24 Elastic 弹性
-    elasticIn(t) {
+    elasticIn(t: number): number {
         if (t === 0 || t === 1) return t;
         const c4 = (2 * Math.PI) / 3;
         return -Math.pow(2, 10 * t - 10) * Math.sin((t * 10 - 10.75) * c4);
     },
-    elasticOut(t) {
+    elasticOut(t: number): number {
         if (t === 0 || t === 1) return t;
         const c4 = (2 * Math.PI) / 3;
         return Math.pow(2, -10 * t) * Math.sin((t * 10 - 0.75) * c4) + 1;
     },
-    elasticInOut(t) {
+    elasticInOut(t: number): number {
         if (t === 0 || t === 1) return t;
         const c5 = (2 * Math.PI) / 4.5;
         if (t < 0.5) {
@@ -114,17 +115,17 @@ const Easing = {
         );
     },
     // 25 / 26 / 27 Back 后退
-    backIn(t) {
+    backIn(t: number): number {
         const c1 = 1.70158;
         const c3 = c1 + 1;
         return c3 * t * t * t - c1 * t * t;
     },
-    backOut(t) {
+    backOut(t: number): number {
         const c1 = 1.70158;
         const c3 = c1 + 1;
         return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
     },
-    backInOut(t) {
+    backInOut(t: number): number {
         const c1 = 1.70158;
         const c2 = c1 * 1.525;
         if (t < 0.5) {
@@ -137,7 +138,7 @@ const Easing = {
         );
     },
     // 28 / 29 / 30 Bounce 弹跳
-    bounceOut(t) {
+    bounceOut(t: number): number {
         const n1 = 7.5625;
         const d1 = 2.75;
         if (t < 1 / d1) {
@@ -153,10 +154,10 @@ const Easing = {
             return n1 * t * t + 0.984375;
         }
     },
-    bounceIn(t) {
+    bounceIn(t: number): number {
         return 1 - Easing.bounceOut(1 - t);
     },
-    bounceInOut(t) {
+    bounceInOut(t: number): number {
         if (t < 0.5) {
             return (1 - Easing.bounceOut(1 - 2 * t)) / 2;
         }
@@ -165,7 +166,7 @@ const Easing = {
 };
 
 // 根据 tweenType（lapi.TWEEN_TYPE）返回对应缓动值
-function easeByTweenType(t, tweenType) {
+function easeByTweenType(t: number, tweenType: number): number {
     switch (tweenType) {
         case 0: return Easing.linear(t);
         case 1: return Easing.sineOut(t);
@@ -205,11 +206,15 @@ function easeByTweenType(t, tweenType) {
 // 预览时假定的帧率（仅用于从帧数换算到毫秒，不影响导出数据）
 const PREVIEW_FPS = 60;
 
-export function useAnimations(widgetsList, selectedIds) {
-    const animations = ref([]);
+interface WidgetWithPreview extends Widget {
+    _previewAlpha?: number;
+}
+
+export function useAnimations(widgetsList: Ref<Widget[]>, selectedIds: Ref<number[]>) {
+    const animations = ref<Animation[]>([]);
     const nextAnimId = ref(1);
     // 当前正在播放的预览（用于防止多次点击导致状态错乱）
-    let currentPreviewStop = null;
+    let currentPreviewStop: (() => void) | null = null;
 
     const currentWidgetId = computed(() => selectedIds.value[0] ?? null);
 
@@ -219,12 +224,12 @@ export function useAnimations(widgetsList, selectedIds) {
         return animations.value.filter((a) => a.widgetId === id);
     });
 
-    const addAnimationForSelected = (type = 'move') => {
+    const addAnimationForSelected = (type: string = 'move') => {
         const widgetId = currentWidgetId.value;
         if (!widgetId) return;
 
         const id = nextAnimId.value++;
-        let params = {};
+        let params: any = {};
         if (type === 'move') {
             // 目标位置（可选），不填则使用当前位置附近做预览 + 缓动类型
             params = { toX: null, toY: null, tweenType: 0 };
@@ -245,11 +250,11 @@ export function useAnimations(widgetsList, selectedIds) {
         });
     };
 
-    const removeAnimation = (id) => {
+    const removeAnimation = (id: number) => {
         animations.value = animations.value.filter((a) => a.id !== id);
     };
 
-    const duplicateAnimation = (id) => {
+    const duplicateAnimation = (id: number) => {
         const src = animations.value.find((a) => a.id === id);
         if (!src) return;
         const newId = nextAnimId.value++;
@@ -260,7 +265,7 @@ export function useAnimations(widgetsList, selectedIds) {
         });
     };
 
-    const updateAnimation = (id, patch) => {
+    const updateAnimation = (id: number, patch: Partial<Animation>) => {
         const idx = animations.value.findIndex((a) => a.id === id);
         if (idx === -1) return;
         animations.value[idx] = {
@@ -270,7 +275,7 @@ export function useAnimations(widgetsList, selectedIds) {
     };
 
     // 预览：在编辑器中临时修改控件属性，播放一遍动画后恢复
-    const previewAnimation = (id) => {
+    const previewAnimation = (id: number): (() => void) | undefined => {
         // 如果上一次预览还在播放，先强制停止并恢复状态
         if (typeof currentPreviewStop === 'function') {
             currentPreviewStop();
@@ -279,10 +284,10 @@ export function useAnimations(widgetsList, selectedIds) {
         const anim = animations.value.find((a) => a.id === id);
         if (!anim) return;
 
-        const rootWidget = widgetsList.value.find((w) => w.id === anim.widgetId);
+        const rootWidget = widgetsList.value.find((w) => w.id === anim.widgetId) as WidgetWithPreview | undefined;
         if (!rootWidget) return;
 
-        // duration / delay 单位为“帧”，这里按预览帧率换算为毫秒
+        // duration / delay 单位为"帧"，这里按预览帧率换算为毫秒
         const durationFrames = Math.max(1, anim.duration || 1);
         const delayFrames = Math.max(0, anim.delay || 0);
         const frameMs = 1000 / PREVIEW_FPS;
@@ -290,9 +295,9 @@ export function useAnimations(widgetsList, selectedIds) {
         const delayMs = delayFrames * frameMs;
 
         // 收集根控件及所有子控件，确保子控件跟随移动
-        const affected = [];
-        const collect = (wid) => {
-            const w = widgetsList.value.find((x) => x.id === wid);
+        const affected: WidgetWithPreview[] = [];
+        const collect = (wid: number) => {
+            const w = widgetsList.value.find((x) => x.id === wid) as WidgetWithPreview | undefined;
             if (!w) return;
             affected.push(w);
             widgetsList.value.forEach((child) => {
@@ -303,18 +308,19 @@ export function useAnimations(widgetsList, selectedIds) {
         };
         collect(rootWidget.id);
 
-        const originalState = new Map();
+        const originalState = new Map<number, { x: number; y: number; w: number; h: number; alpha: number }>();
         affected.forEach((w) => {
             originalState.set(w.id, {
                 x: w.x,
                 y: w.y,
                 w: w.w,
                 h: w.h,
-                alpha: w._previewAlpha ?? 1,
+                alpha: (w as any)._previewAlpha ?? 1,
             });
         });
 
         const rootOrigin = originalState.get(rootWidget.id);
+        if (!rootOrigin) return;
         const startX = rootOrigin.x;
         const startY = rootOrigin.y;
         const startW = rootOrigin.w;
@@ -329,7 +335,7 @@ export function useAnimations(widgetsList, selectedIds) {
         let stopped = false;
         const startTime = performance.now() + delayMs;
 
-        const step = (now) => {
+        const step = (now: number) => {
             if (stopped) return;
             if (now < startTime) {
                 requestAnimationFrame(step);
@@ -376,7 +382,7 @@ export function useAnimations(widgetsList, selectedIds) {
                     w.y = o.y;
                     w.w = o.w;
                     w.h = o.h;
-                    w._previewAlpha = o.alpha;
+                    (w as any)._previewAlpha = o.alpha;
                 });
             }
         };
@@ -393,7 +399,7 @@ export function useAnimations(widgetsList, selectedIds) {
                 w.y = o.y;
                 w.w = o.w;
                 w.h = o.h;
-                w._previewAlpha = o.alpha;
+                (w as any)._previewAlpha = o.alpha;
             });
         };
 
@@ -403,8 +409,8 @@ export function useAnimations(widgetsList, selectedIds) {
     };
 
     // 导出时使用：返回与 widget 绑定的动画列表
-    const getAnimationsForExport = () => {
-        const byWidget = {};
+    const getAnimationsForExport = (): Record<string, Omit<Animation, 'id'>[]> => {
+        const byWidget: Record<string, Omit<Animation, 'id'>[]> = {};
         for (const anim of animations.value) {
             if (!byWidget[anim.widgetId]) byWidget[anim.widgetId] = [];
             // 导出时不需要编辑器内部的 id
@@ -426,5 +432,4 @@ export function useAnimations(widgetsList, selectedIds) {
         previewAnimation,
     };
 }
-
 

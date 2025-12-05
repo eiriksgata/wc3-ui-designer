@@ -1,10 +1,19 @@
+import type { Widget, Animation } from '../types';
+
+interface ExportOptions {
+    fileName?: string;
+    resourcePath?: string;
+    luaPath?: string;
+    animations?: Record<string, Animation[]>;
+}
+
 export function useLuaExport() {
     // 计算相对路径（从 fromPath 到 toPath）
-    const getRelativePath = (fromPath, toPath) => {
+    const getRelativePath = (fromPath: string, toPath: string): string => {
         if (!fromPath || !toPath) return toPath;
 
         // 标准化路径分隔符为统一格式
-        const normalize = (path) => {
+        const normalize = (path: string): string => {
             // 处理 Windows 路径（如 C:\Users\...）
             let normalized = path.replace(/\\/g, '/');
             // 移除末尾的斜杠（如果有）
@@ -58,13 +67,13 @@ export function useLuaExport() {
     };
 
     // 转换图片路径
-    const convertImagePath = (imagePath, resourcePath, luaPath) => {
+    const convertImagePath = (imagePath: string, resourcePath: string, luaPath: string): string => {
         if (!imagePath || !resourcePath || !luaPath) {
             return imagePath; // 如果缺少参数，返回原路径
         }
 
         // 从 imagePath 中提取文件名（可能是完整路径或只是文件名）
-        const fileName = imagePath.split(/[/\\]/).pop();
+        const fileName = imagePath.split(/[/\\]/).pop() || '';
 
         // 构建资源文件的完整路径
         const sep = resourcePath.includes('\\') ? '\\' : '/';
@@ -76,7 +85,7 @@ export function useLuaExport() {
         return relativePath;
     };
 
-    const exportLua = (widgets, options = {}) => {
+    const exportLua = (widgets: Widget[], options: ExportOptions = {}): string | undefined => {
         if (!widgets || widgets.length === 0) {
             return;
         }
@@ -100,7 +109,7 @@ export function useLuaExport() {
         lua += '        image = Const.Texture.blank,\n';
         lua += '        -- 以下子控件由设计器生成\n';
 
-        const emitWidget = (w, indent) => {
+        const emitWidget = (w: Widget, indent: number) => {
             const pad = ' '.repeat(indent);
             let luaType = 'Panel';
             if (w.type === 'label' || w.type === 'input') luaType = 'Text';

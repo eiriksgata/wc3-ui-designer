@@ -1,6 +1,18 @@
-import { ref } from 'vue';
+import { ref, type Ref } from 'vue';
+import type { Settings } from '../types';
 
-export function usePanelResize(settings, saveSettings) {
+type DragType = 'left' | 'right' | 'bottom' | null;
+
+interface DragState {
+    type: DragType;
+    startX: number;
+    startY: number;
+    leftWidth: number;
+    rightWidth: number;
+    resourcesHeight: number;
+}
+
+export function usePanelResize(settings: Ref<Settings>, saveSettings: () => boolean) {
     const leftWidth = ref(settings.value.controlPanelWidth || 220);
     const rightWidth = ref(260);
     const resourcesHeight = ref(200);
@@ -12,8 +24,8 @@ export function usePanelResize(settings, saveSettings) {
     const MIN_RESOURCES_HEIGHT = 120;
     const MAX_RESOURCES_HEIGHT = 400;
 
-    const dragState = ref({
-        type: null, // 'left' | 'right' | 'bottom'
+    const dragState = ref<DragState>({
+        type: null,
         startX: 0,
         startY: 0,
         leftWidth: 0,
@@ -21,7 +33,7 @@ export function usePanelResize(settings, saveSettings) {
         resourcesHeight: 0,
     });
 
-    const startDragLeft = (ev) => {
+    const startDragLeft = (ev: MouseEvent) => {
         dragState.value = {
             type: 'left',
             startX: ev.clientX,
@@ -34,7 +46,7 @@ export function usePanelResize(settings, saveSettings) {
         document.addEventListener('mouseup', stopDrag);
     };
 
-    const startDragRight = (ev) => {
+    const startDragRight = (ev: MouseEvent) => {
         dragState.value = {
             type: 'right',
             startX: ev.clientX,
@@ -47,7 +59,7 @@ export function usePanelResize(settings, saveSettings) {
         document.addEventListener('mouseup', stopDrag);
     };
 
-    const startDragBottom = (ev) => {
+    const startDragBottom = (ev: MouseEvent) => {
         dragState.value = {
             type: 'bottom',
             startX: ev.clientX,
@@ -60,7 +72,7 @@ export function usePanelResize(settings, saveSettings) {
         document.addEventListener('mouseup', stopDrag);
     };
 
-    const handleDragMouseMove = (ev) => {
+    const handleDragMouseMove = (ev: MouseEvent) => {
         const s = dragState.value;
         if (!s.type) return;
         const dx = ev.clientX - s.startX;

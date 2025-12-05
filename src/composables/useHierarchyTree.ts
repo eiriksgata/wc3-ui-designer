@@ -1,23 +1,34 @@
-import { ref, computed, nextTick } from 'vue';
+import { ref, computed, nextTick, type Ref } from 'vue';
+import type { Widget } from '../types';
+
+interface TreeNode {
+    id: number;
+    name: string;
+    type: string;
+    parentId: number | null;
+    children: TreeNode[];
+    depth?: number;
+    hasChildren?: boolean;
+}
 
 export function useHierarchyTree(
-    widgetsList,
-    selectedIds,
-    nextId,
-    pushHistory,
-    message,
-    uiZoom,
-    leftPanelRef
+    widgetsList: Ref<Widget[]>,
+    selectedIds: Ref<number[]>,
+    nextId: Ref<number>,
+    pushHistory: () => void,
+    message: Ref<string>,
+    uiZoom: Ref<number>,
+    leftPanelRef: Ref<HTMLElement | null>
 ) {
-    const hierarchyPanelRef = ref(null);
+    const hierarchyPanelRef = ref<HTMLElement | null>(null);
     const treeDragPreviewPos = ref({ x: 0, y: 0 });
     const treeDragClickOffsetY = ref(0);
 
-    const treeExpanded = ref({}); // id -> boolean（undefined 视为展开）
-    const isTreeNodeExpanded = (id) =>
+    const treeExpanded = ref<Record<number, boolean>>({}); // id -> boolean（undefined 视为展开）
+    const isTreeNodeExpanded = (id: number): boolean =>
         treeExpanded.value[id] !== false;
 
-    const toggleTreeNode = (id) => {
+    const toggleTreeNode = (id: number) => {
         const current = treeExpanded.value[id];
         treeExpanded.value = {
             ...treeExpanded.value,
@@ -26,25 +37,25 @@ export function useHierarchyTree(
     };
 
     const widgetTreeFlat = computed(() => {
-        const items = widgetsList.value.map((w) => ({
+        const items: TreeNode[] = widgetsList.value.map((w) => ({
             id: w.id,
             name: w.name,
             type: w.type,
             parentId: w.parentId,
             children: [],
         }));
-        const map = new Map();
+        const map = new Map<number, TreeNode>();
         items.forEach((n) => map.set(n.id, n));
-        const roots = [];
+        const roots: TreeNode[] = [];
         items.forEach((n) => {
             if (n.parentId != null && map.has(n.parentId)) {
-                map.get(n.parentId).children.push(n);
+                map.get(n.parentId)!.children.push(n);
             } else {
                 roots.push(n);
             }
         });
-        const flat = [];
-        const visit = (node, depth) => {
+        const flat: TreeNode[] = [];
+        const visit = (node: TreeNode, depth: number) => {
             const hasChildren = node.children.length > 0;
             flat.push({ ...node, depth, hasChildren });
             if (hasChildren && isTreeNodeExpanded(node.id)) {
@@ -55,13 +66,14 @@ export function useHierarchyTree(
         return flat;
     });
 
+    const treeDragSourceId = ref<number | null>(null);
     const dragPreviewNode = computed(() => {
         if (treeDragSourceId.value == null) return null;
         return widgetTreeFlat.value.find((n) => n.id === treeDragSourceId.value) || null;
     });
 
     // 树节点点击：支持 Ctrl 多选
-    const selectFromTree = (id, ev) => {
+    const selectFromTree = (id: number, ev: MouseEvent) => {
         const isCtrl = ev && (ev.ctrlKey || ev.metaKey);
         if (isCtrl) {
             const set = new Set(selectedIds.value);
@@ -77,18 +89,18 @@ export function useHierarchyTree(
     };
 
     // 判断是否是祖先关系，防止把父节点拖到自己的子节点下面
-    const isDescendantOf = (ancestorId, maybeDescendantId) => {
+    const isDescendantOf = (ancestorId: number, maybeDescendantId: number): boolean => {
         let current = widgetsList.value.find((w) => w.id === maybeDescendantId);
         const safetyLimit = 1000;
         let guard = 0;
         while (current && current.parentId != null && guard++ < safetyLimit) {
             if (current.parentId === ancestorId) return true;
-            current = widgetsList.value.find((w) => w.id === current.parentId);
+            current = widgetsList.value.find((w) => w.id === current!.parentId);
         }
         return false;
     };
 
-    const updateWidgetParent = (id, newParentId) => {
+    const updateWidgetParent = (id: number, newParentId: number | null) => {
         const idx = widgetsList.value.findIndex((w) => w.id === id);
         if (idx === -1) return;
         const old = widgetsList.value[idx];
@@ -100,12 +112,11 @@ export function useHierarchyTree(
     };
 
     // 树拖动调整层级：用鼠标 mousedown + mousemove + mouseup + elementFromPoint 实现
-    const treeDragSourceId = ref(null);
     const treeDragStartPos = ref({ x: 0, y: 0 });
     const treeIsDragging = ref(false);
     const TREE_DRAG_THRESHOLD = 4; // 像素阈值，避免误触
 
-    const onTreeMouseDown = (id, ev) => {
+    const onTreeMouseDown = (id: number, ev: MouseEvent) => {
         if (ev.button !== 0) return; // 只响应左键
         // 正在重命名时不处理拖动
         if (treeRenameId.value != null) return;
@@ -113,7 +124,7 @@ export function useHierarchyTree(
         treeDragStartPos.value = { x: ev.clientX, y: ev.clientY };
         treeIsDragging.value = false;
         const panelEl = hierarchyPanelRef.value;
-        const itemEl = ev.currentTarget;
+        const itemEl = ev.currentTarget as HTMLElement;
         if (panelEl && itemEl instanceof HTMLElement) {
             const panelRect = panelEl.getBoundingClientRect();
             const itemRect = itemEl.getBoundingClientRect();
@@ -131,7 +142,7 @@ export function useHierarchyTree(
         document.addEventListener('mouseup', onTreeMouseUp, { once: true });
     };
 
-    const onTreeMouseMove = (ev) => {
+    const onTreeMouseMove = (ev: MouseEvent) => {
         if (!treeDragSourceId.value) return;
         const dx = ev.clientX - treeDragStartPos.value.x;
         const dy = ev.clientY - treeDragStartPos.value.y;
@@ -156,7 +167,7 @@ export function useHierarchyTree(
         }
     };
 
-    const onTreeMouseUp = (ev) => {
+    const onTreeMouseUp = (ev: MouseEvent) => {
         document.removeEventListener('mousemove', onTreeMouseMove);
         const srcId = treeDragSourceId.value;
         treeDragSourceId.value = null;
@@ -175,7 +186,7 @@ export function useHierarchyTree(
         const el = document.elementFromPoint(ev.clientX, ev.clientY);
         if (!el) return;
 
-        const itemEl = el.closest('.tree-item');
+        const itemEl = el.closest('.tree-item') as HTMLElement | null;
         if (itemEl && itemEl.dataset && itemEl.dataset.id) {
             const targetId = Number(itemEl.dataset.id);
             if (!isNaN(targetId) && targetId !== srcId) {
@@ -201,18 +212,23 @@ export function useHierarchyTree(
     };
 
     // 树右键菜单 & 重命名
-    const treeContextMenu = ref({
+    const treeContextMenu = ref<{
+        visible: boolean;
+        x: number;
+        y: number;
+        targetId: number | null;
+    }>({
         visible: false,
         x: 0,
         y: 0,
         targetId: null,
     });
 
-    const treeRenameId = ref(null);
+    const treeRenameId = ref<number | null>(null);
     const treeRenameName = ref('');
-    const treeRenameInputRef = ref(null);
+    const treeRenameInputRef = ref<HTMLInputElement | null>(null);
 
-    const onTreeContextMenu = (node, ev) => {
+    const onTreeContextMenu = (node: TreeNode, ev: MouseEvent) => {
         const panel = leftPanelRef.value;
         if (!panel) return;
         const rect = panel.getBoundingClientRect();
@@ -231,12 +247,11 @@ export function useHierarchyTree(
         treeContextMenu.value.visible = false;
     };
 
-    const startTreeRename = (node) => {
+    const startTreeRename = (node: TreeNode) => {
         treeRenameId.value = node.id;
         treeRenameName.value = node.name || '';
         nextTick(() => {
-            const refVal = treeRenameInputRef.value;
-            const el = Array.isArray(refVal) ? refVal[0] : refVal;
+            const el = treeRenameInputRef.value;
             if (el && typeof el.focus === 'function') {
                 el.focus();
                 if (typeof el.select === 'function') {
@@ -276,7 +291,7 @@ export function useHierarchyTree(
         w.parentId = null;
     };
 
-    const handleTreeDelete = () => {
+    const handleTreeDelete = (): number | undefined => {
         const id = treeContextMenu.value.targetId;
         closeTreeContextMenu();
         if (!id) return;

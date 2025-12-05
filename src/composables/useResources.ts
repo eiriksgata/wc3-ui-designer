@@ -1,34 +1,36 @@
-import { ref } from 'vue';
-import { decodeTgaToDataUrl } from '../utils/tgaDecoder.js';
+import { ref, type Ref } from 'vue';
+import { decodeTgaToDataUrl } from '../utils/tgaDecoder';
+import type { ImageResource } from '../types';
 
 export function useResources() {
-    const resourceInputRef = ref(null);
+    const resourceInputRef = ref<HTMLInputElement | null>(null);
     // 默认不再内置任何图片资源，完全由用户导入
-    const imageResources = ref([]);
+    const imageResources: Ref<ImageResource[]> = ref([]);
 
     const triggerImportResources = () => {
         resourceInputRef.value?.click();
     };
 
-    const fileToDataUrl = (file) => {
+    const fileToDataUrl = (file: File): Promise<string> => {
         return new Promise((resolve, reject) => {
             const reader = new FileReader();
-            reader.onload = () => resolve(reader.result);
+            reader.onload = () => resolve(reader.result as string);
             reader.onerror = (e) => reject(e);
             reader.readAsDataURL(file);
         });
     };
 
-    const handleResourcesSelected = async (ev) => {
-        const files = Array.from(ev.target.files || []);
-        if (!files.length) return;
+    const handleResourcesSelected = async (ev: Event): Promise<number> => {
+        const target = ev.target as HTMLInputElement;
+        const files = Array.from(target.files || []);
+        if (!files.length) return 0;
 
-        const newResources = [];
+        const newResources: ImageResource[] = [];
         for (const file of files) {
-            const rel = file.webkitRelativePath || file.name;
+            const rel = (file as any).webkitRelativePath || file.name;
             const war3Path = rel.replace(/\//g, '\\');
-            const localPath = file.path || '';
-            const ext = file.name.split('.').pop().toLowerCase();
+            const localPath = (file as any).path || '';
+            const ext = file.name.split('.').pop()?.toLowerCase() || '';
             let previewUrl = '';
             try {
                 if (['png', 'jpg', 'jpeg', 'bmp'].includes(ext)) {
@@ -53,7 +55,7 @@ export function useResources() {
         }
 
         // 去重：使用 Map 确保相同路径的资源只保留一个
-        const map = new Map();
+        const map = new Map<string, ImageResource>();
         imageResources.value.forEach((r) => map.set(r.value, r));
         newResources.forEach((r) => {
             if (!map.has(r.value)) map.set(r.value, r);
