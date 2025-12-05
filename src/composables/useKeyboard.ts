@@ -27,9 +27,24 @@ export function useKeyboard(
             tag === 'SELECT' ||
             (ev.target && (ev.target as HTMLElement).isContentEditable);
 
+        // 空格键处理：独立于其他快捷键，但需要在非表单元素中
+        // 这样可以确保即使按住 Ctrl/Meta 键，空格键仍然可以触发画布平移
+        if (!isFormElement && ev.code === 'Space') {
+            // 空格键：开始平移画布（仅在非表单元素中）
+            // 使用 !isSpacePressed.value 而不是 !isPanning.value，因为这是两个不同的状态
+            if (!isSpacePressed.value) {
+                isSpacePressed.value = true;
+            }
+            ev.preventDefault();
+            return; // 提前返回，避免与其他快捷键冲突
+        }
+
         // 在输入框里允许默认的复制粘贴等，不拦截
         if (isFormElement) {
-            // 空格键在输入框内保持默认行为
+            // 在表单元素中，只处理 Ctrl/Cmd 快捷键（复制、粘贴等）
+            if (ev.ctrlKey || ev.metaKey) {
+                // 允许默认的复制粘贴行为，不拦截
+            }
         } else {
             // 常用快捷键：复制/粘贴/撤销/重做/删除
             if (ev.ctrlKey || ev.metaKey) {
@@ -95,18 +110,12 @@ export function useKeyboard(
                     deleteSelectedWithHistory();
                     ev.preventDefault();
                 }
-            } else if (!isFormElement && ev.code === 'F4') {
+            } else if (ev.code === 'F4') {
                 // F4：执行导出
                 if (typeof doExport === 'function') {
                     doExport();
                     ev.preventDefault();
                 }
-            } else if (ev.code === 'Space') {
-                // 空格键：开始平移画布
-                if (!isPanning.value) {
-                    isSpacePressed.value = true;
-                }
-                ev.preventDefault();
             } else if (ev.code === 'KeyG') {
                 // G 键：切换网格显示（128×128 → 64×64 → 关闭）
                 gridMode.value = (gridMode.value + 1) % 4;
@@ -116,7 +125,15 @@ export function useKeyboard(
     };
 
     const handleKeyUp = (ev: KeyboardEvent) => {
-        if (ev.code === 'Space') {
+        const tag = ev.target && (ev.target as HTMLElement).tagName;
+        const isFormElement =
+            tag === 'INPUT' ||
+            tag === 'TEXTAREA' ||
+            tag === 'SELECT' ||
+            (ev.target && (ev.target as HTMLElement).isContentEditable);
+        
+        // 只在非表单元素中处理空格键释放
+        if (!isFormElement && ev.code === 'Space') {
             isSpacePressed.value = false;
         }
     };
