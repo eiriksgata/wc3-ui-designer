@@ -2,13 +2,13 @@
   <div class="app-layout" :style="{ '--ui-zoom': uiZoom.toFixed(2) }">
     <div class="zoom-root">
       <!-- 顶部菜单栏：跨越整个窗口，包括左侧控件面板 -->
-      <TopMenuBar :grid-snap-enabled="gridSnapEnabled" :message="message" @new-project="handleNewProject"
-        @open-project="loadProjectFromFile" @save-project="saveProjectToFile" @save-as-project="saveProjectAsFile"
-        @undo="undoLayout" @redo="redoLayout" @copy="copySelection" @paste="pasteClipboard"
-        @delete-selected="deleteSelectedWithHistory" @clear-all="clearAllWithHistory" @align-left="alignLeft"
-        @align-top="alignTop" @align-h-center="alignHCenter" @align-v-center="alignVCenter"
-        @align-same-width="alignSameWidth" @align-same-height="alignSameHeight" @toggle-grid-snap="toggleGridSnap"
-        @import-resources="onImportResourcesClick" @open-settings="showSettings = true"
+      <TopMenuBar :grid-snap-enabled="gridSnapEnabled" :message="message" :recent-projects="recentProjects"
+        @new-project="handleNewProject" @open-project="loadProjectFromFile" @open-recent-project="openRecentProject"
+        @save-project="saveProjectToFile" @save-as-project="saveProjectAsFile" @undo="undoLayout" @redo="redoLayout"
+        @copy="copySelection" @paste="pasteClipboard" @delete-selected="deleteSelectedWithHistory"
+        @clear-all="clearAllWithHistory" @align-left="alignLeft" @align-top="alignTop" @align-h-center="alignHCenter"
+        @align-v-center="alignVCenter" @align-same-width="alignSameWidth" @align-same-height="alignSameHeight"
+        @toggle-grid-snap="toggleGridSnap" @import-resources="onImportResourcesClick" @open-settings="showSettings = true"
         @open-export="showExportPanel = true" @open-help="showKeyboardShortcuts = true" />
 
       <div class="main-row">

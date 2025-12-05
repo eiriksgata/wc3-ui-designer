@@ -1,6 +1,0 @@
-require 'framework.module.frame.common.Console'
-require 'framework.module.frame.common.CommandBar'
-require 'framework.module.frame.common.GameUI'
-require 'framework.module.frame.common.Interface'
-require 'framework.module.frame.common.ItemBar'
-require 'framework.module.frame.common.Lowest'

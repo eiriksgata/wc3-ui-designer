@@ -14,3 +14,9 @@ src-tauri/target/
 # 系统文件
 Thumbs.db
 Desktop.ini
+
+out
+output
+frame
+
+UITemplate

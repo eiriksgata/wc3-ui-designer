@@ -318,7 +318,41 @@
             </div>
         </div>
 
-        <div v-else class="empty-tip">在画布中点击控件以编辑属性</div>
+        <div v-else class="empty-tip">
+            <div class="empty-tip-title">在画布中点击控件以编辑属性</div>
+            <div class="empty-tip-shortcuts">
+                <h4 class="shortcuts-title">快捷操作</h4>
+                <div class="shortcut-hint">
+                    <div class="shortcut-hint-item">
+                        <span class="shortcut-hint-icon">🖱️</span>
+                        <div class="shortcut-hint-content">
+                            <div class="shortcut-hint-desc">拖拽控件</div>
+                            <div class="shortcut-hint-key">鼠标左键点击并拖动</div>
+                        </div>
+                    </div>
+                    <div class="shortcut-hint-item">
+                        <span class="shortcut-hint-icon">↘️</span>
+                        <div class="shortcut-hint-content">
+                            <div class="shortcut-hint-desc">缩放控件</div>
+                            <div class="shortcut-hint-key">拖动控件右下角</div>
+                        </div>
+                    </div>
+                    <div class="shortcut-hint-item">
+                        <div class="shortcut-hint-content">
+                            <div class="shortcut-hint-desc">拖动画布</div>
+                            <div class="shortcut-hint-key">空格 + 鼠标拖动</div>
+                        </div>
+                    </div>
+
+                    <div class="shortcut-hint-item">
+                        <div class="shortcut-hint-content">
+                            <div class="shortcut-hint-desc">缩放画布</div>
+                            <div class="shortcut-hint-key">Ctrl + 鼠标滚轮</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 </template>
 
@@ -372,5 +406,72 @@ defineEmits([
 .right textarea,
 .right select {
     user-select: text;
+}
+
+.empty-tip {
+    padding: 20px 16px;
+    text-align: center;
+    color: #888;
+}
+
+.empty-tip-title {
+    font-size: 13px;
+    margin-bottom: 20px;
+    color: #aaa;
+}
+
+.empty-tip-shortcuts {
+    margin-top: 24px;
+}
+
+.shortcuts-title {
+    font-size: 11px;
+    color: #666;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin: 0 0 12px 0;
+    text-align: left;
+}
+
+.shortcut-hint {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.shortcut-hint-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px;
+    background: #1e1e1e;
+    border: 1px solid #2d2d30;
+    border-radius: 4px;
+    text-align: left;
+}
+
+.shortcut-hint-icon {
+    font-size: 18px;
+    flex-shrink: 0;
+    margin-top: 2px;
+}
+
+.shortcut-hint-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.shortcut-hint-desc {
+    font-size: 12px;
+    color: #ccc;
+    font-weight: 500;
+}
+
+.shortcut-hint-key {
+    font-size: 11px;
+    color: #888;
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
 }
 </style>

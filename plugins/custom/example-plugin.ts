@@ -1,4 +1,4 @@
-import type { ExportPluginModule, ExportContext } from '../src/types/plugin';
+import type { ExportPluginModule, ExportContext } from '../../src/types/plugin';
 
 /**
  * 示例插件：自定义导出格式

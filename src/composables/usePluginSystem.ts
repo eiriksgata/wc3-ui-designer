@@ -63,7 +63,10 @@ export function usePluginSystem() {
         try {
             // 使用动态 import 加载插件
             // 注意：在 Vite 中，路径需要相对于项目根目录或使用别名
-            const module = await import(/* @vite-ignore */ pluginPath);
+            const rawModule = await import(/* @vite-ignore */ pluginPath);
+            
+            // 处理默认导出：如果模块使用 export default，需要通过 .default 访问
+            const module = rawModule.default || rawModule;
 
             // 验证插件格式
             const validation = validatePlugin(module);
@@ -143,8 +146,18 @@ export function usePluginSystem() {
 
             for (const path in pluginModules) {
                 try {
-                    const module = await pluginModules[path]() as any;
+                    const rawModule = await pluginModules[path]() as any;
+                    // 处理默认导出：如果模块使用 export default，需要通过 .default 访问
+                    const module = rawModule.default || rawModule;
+                    
                     if (module && module.metadata) {
+                        // 验证插件格式
+                        const validation = validatePlugin(module);
+                        if (!validation.valid) {
+                            console.warn(`插件验证失败: ${path}`, validation.errors);
+                            continue;
+                        }
+
                         const plugin: ExportPlugin = {
                             ...module.metadata,
                             type: 'builtin',
@@ -210,8 +223,18 @@ export function usePluginSystem() {
 
             for (const path in pluginModules) {
                 try {
-                    const module = await pluginModules[path]() as any;
+                    const rawModule = await pluginModules[path]() as any;
+                    // 处理默认导出：如果模块使用 export default，需要通过 .default 访问
+                    const module = rawModule.default || rawModule;
+                    
                     if (module && module.metadata) {
+                        // 验证插件格式
+                        const validation = validatePlugin(module);
+                        if (!validation.valid) {
+                            console.warn(`插件验证失败: ${path}`, validation.errors);
+                            continue;
+                        }
+
                         const plugin: ExportPlugin = {
                             ...module.metadata,
                             type: 'custom',

@@ -14,6 +14,7 @@ function exportFunction(context: ExportContext): string {
         return '';
     }
 
+
     // 使用项目名作为类名，默认 GeneratedUI
     const className = options.fileName || 'GeneratedUI';
 

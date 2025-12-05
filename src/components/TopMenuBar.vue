@@ -5,6 +5,20 @@
             <div class="menu-dropdown">
                 <button @click="emit('new-project')">新建 (Ctrl+N)</button>
                 <button @click="emit('open-project')">打开 (Ctrl+O)</button>
+                <!-- 添加分隔线和最近项目列表 -->
+                <div v-if="recentProjects.length > 0" class="menu-separator"></div>
+                <div v-if="recentProjects.length > 0" class="recent-projects-section">
+                    <div class="recent-projects-header">最近项目</div>
+                    <button 
+                        v-for="project in recentProjects" 
+                        :key="project.path"
+                        @click="emit('open-recent-project', project.path)"
+                        class="recent-project-item"
+                        :title="project.path"
+                    >
+                        {{ project.name }}
+                    </button>
+                </div>
                 <button @click="emit('save-project')">保存 (Ctrl+S)</button>
                 <button @click="emit('save-as-project')">另存为 (Ctrl+Shift+S)</button>
             </div>
@@ -62,11 +76,13 @@
 const props = defineProps({
     gridSnapEnabled: { type: Boolean, default: false },
     message: { type: String, default: '' },
+    recentProjects: { type: Array, default: () => [] },
 });
 
 const emit = defineEmits([
     'new-project',
     'open-project',
+    'open-recent-project',
     'save-project',
     'save-as-project',
     'undo',
@@ -151,5 +167,32 @@ const emit = defineEmits([
     margin-left: auto;
     font-size: 12px;
     color: #ccc;
+}
+
+.menu-separator {
+    height: 1px;
+    background: #3e3e42;
+    margin: 4px 0;
+}
+
+.recent-projects-section {
+    padding: 0;
+}
+
+.recent-projects-header {
+    padding: 4px 12px;
+    font-size: 11px;
+    color: #888;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.recent-project-item {
+    padding: 4px 12px 4px 24px; /* 左侧缩进 */
+    font-size: 12px;
+    text-overflow: ellipsis;
+    overflow: hidden;
+    white-space: nowrap;
+    max-width: 300px;
 }
 </style>
