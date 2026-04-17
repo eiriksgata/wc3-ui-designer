@@ -282,6 +282,7 @@ import { useHierarchyTree } from './composables/useHierarchyTree';
 import { useKeyboard } from './composables/useKeyboard';
 import { useCanvasInteraction } from './composables/useCanvasInteraction';
 import { useAnimations } from './composables/useAnimations';
+import { useActionApi } from './composables/useActionApi';
 
 // 使用组合式函数
 const { showSettings, settings, saveSettings, resetSettings, loadSettings } = useSettings();
@@ -987,6 +988,27 @@ const deleteSelectedWithHistory = () => {
   pushHistory();
   deleteSelected();
 };
+
+const actionApi = useActionApi({
+  widgetsList,
+  selectedIds,
+  imageResources,
+  animations,
+  settings,
+  addWidgetWithHistory,
+  deleteSelectedWithHistory,
+  pushHistory,
+  undoLayout,
+  redoLayout,
+  doExport,
+  exportResultMessages,
+  selectedExportPlugin,
+  exportPlugins,
+});
+
+if (typeof window !== 'undefined') {
+  (window as any).__uiDesignerActionApi = actionApi;
+}
 
 // 使用批量编辑 composable
 const batchEdit = useBatchEdit(widgetsList, selectedIds, pushHistory, moveWidgetWithChildren, supportsImage);

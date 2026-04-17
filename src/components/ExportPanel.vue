@@ -136,10 +136,32 @@ const currentPlugin = computed(() =>
 );
 const currentPluginName = computed(() => currentPlugin.value?.name || '选择插件');
 const currentPluginIsBuiltin = computed(() => currentPlugin.value?.type === 'builtin');
+const pickingResourcesPath = ref(false);
+const pickingCodePath = ref(false);
 
 const emitClose = () => emit('close');
-const emitSelectExportResourcesPath = () => emit('select-export-resources-path');
-const emitSelectExportCodePath = () => emit('select-export-code-path');
+const emitSelectExportResourcesPath = () => {
+    if (pickingResourcesPath.value) return;
+    pickingResourcesPath.value = true;
+    try {
+        emit('select-export-resources-path');
+    } finally {
+        setTimeout(() => {
+            pickingResourcesPath.value = false;
+        }, 300);
+    }
+};
+const emitSelectExportCodePath = () => {
+    if (pickingCodePath.value) return;
+    pickingCodePath.value = true;
+    try {
+        emit('select-export-code-path');
+    } finally {
+        setTimeout(() => {
+            pickingCodePath.value = false;
+        }, 300);
+    }
+};
 const emitLoadCustomPlugin = () => emit('load-custom-plugin');
 const emitCreateNewPlugin = () => emit('create-new-plugin');
 const emitEditPlugin = () => emit('edit-plugin');
