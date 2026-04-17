@@ -1,17 +1,20 @@
 <template>
-    <div v-if="show" class="export-overlay" @click.self="emitClose">
-        <div class="export-dialog plugin-debug-dialog">
-            <h3>插件调试输出</h3>
-            <div class="export-body">
-                <div class="export-section">
-                    <pre class="plugin-debug-output">{{ output }}</pre>
-                </div>
-            </div>
-            <div class="export-footer">
-                <button @click="emitClose">关闭</button>
-            </div>
-        </div>
-    </div>
+    <v-dialog
+        :model-value="show"
+        width="900"
+        scrim="rgba(9, 11, 15, 0.72)"
+        @update:model-value="onDialogModelUpdate"
+    >
+        <v-card class="plugin-debug-dialog" rounded="xl" elevation="12">
+            <v-card-title>插件调试输出</v-card-title>
+            <v-card-text class="export-body">
+                <pre class="plugin-debug-output">{{ output }}</pre>
+            </v-card-text>
+            <v-card-actions class="export-footer">
+                <v-btn variant="flat" color="primary" @click="emitClose">关闭</v-btn>
+            </v-card-actions>
+        </v-card>
+    </v-dialog>
 </template>
 
 <script setup lang="ts">
@@ -22,33 +25,15 @@ const props = defineProps({
 
 const emit = defineEmits(['close']);
 const emitClose = () => emit('close');
+const onDialogModelUpdate = (value: boolean) => {
+    if (!value) emitClose();
+};
 </script>
 
 <style scoped>
-.export-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(0, 0, 0, 0.6);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 1500;
-}
-
-.export-dialog {
+.plugin-debug-dialog {
     background: #2d2d30;
     border: 1px solid #3e3e42;
-    border-radius: 8px;
-    width: 420px;
-    max-width: 90vw;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
-    padding: 16px 20px;
-}
-
-.plugin-debug-dialog {
     max-width: 800px;
     width: 90vw;
 }
@@ -58,17 +43,10 @@ const emitClose = () => emit('close');
     overflow-y: auto;
 }
 
-.export-section {
-    margin-bottom: 20px;
-    padding-bottom: 16px;
-    border-bottom: 1px solid #3e3e42;
-}
-
 .export-footer {
-    margin-top: 16px;
     display: flex;
     justify-content: flex-end;
-    gap: 10px;
+    padding: 10px 16px 16px;
 }
 
 .plugin-debug-output {

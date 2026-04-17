@@ -1,86 +1,68 @@
 <template>
-  <div v-if="showSettings" class="settings-overlay" @click.self="close">
-    <div
-      class="settings-dialog"
-      ref="dialogRef"
-      :style="dialogStyle"
-    >
+  <v-dialog
+    :model-value="showSettings"
+    width="560"
+    scrim="rgba(9, 11, 15, 0.72)"
+    @update:model-value="onDialogModelUpdate"
+  >
+    <v-card class="settings-dialog" ref="dialogRef" :style="dialogStyle" rounded="xl" elevation="12">
       <div class="settings-header" @mousedown.stop.prevent="onHeaderMouseDown">
         <h2>设置</h2>
-        <button class="close-btn" @click="close">×</button>
+        <v-btn icon variant="text" size="small" @click="close">
+          <v-icon icon="mdi-close" />
+        </v-btn>
       </div>
       <div class="settings-content">
         <div class="settings-section">
           <h3>画布设置</h3>
           <label for="canvas-width">画布宽度</label>
-          <input id="canvas-width" name="canvas-width" type="number" v-model.number="localSettings.canvasWidth" min="100" max="10000" />
-          
+          <v-text-field id="canvas-width" type="number" density="compact" variant="outlined" hide-details v-model.number="localSettings.canvasWidth" min="100" max="10000" />
+
           <label for="canvas-height">画布高度</label>
-          <input id="canvas-height" name="canvas-height" type="number" v-model.number="localSettings.canvasHeight" min="100" max="10000" />
+          <v-text-field id="canvas-height" type="number" density="compact" variant="outlined" hide-details v-model.number="localSettings.canvasHeight" min="100" max="10000" />
 
           <label for="control-panel-width">控件面板宽度</label>
-          <input
-            id="control-panel-width"
-            name="control-panel-width"
-            type="number"
-            v-model.number="localSettings.controlPanelWidth"
-            min="120"
-            max="600"
-          />
+          <v-text-field id="control-panel-width" type="number" density="compact" variant="outlined" hide-details v-model.number="localSettings.controlPanelWidth" min="120" max="600" />
           <div class="hint">左侧“控件面板”的宽度（像素）</div>
         </div>
 
         <div class="settings-section">
           <h3>标尺设置</h3>
           <label for="ruler-step">标尺步长</label>
-          <input id="ruler-step" name="ruler-step" type="number" v-model.number="localSettings.rulerStep" min="10" max="500" />
+          <v-text-field id="ruler-step" type="number" density="compact" variant="outlined" hide-details v-model.number="localSettings.rulerStep" min="10" max="500" />
           <div class="hint">标尺上显示数字的间隔（像素）</div>
         </div>
 
         <div class="settings-section">
           <h3>网格设置</h3>
           <label for="grid-snap-step">网格吸附步长</label>
-          <input id="grid-snap-step" name="grid-snap-step" type="number" v-model.number="localSettings.gridSnapStep" min="1" max="1000" />
+          <v-text-field id="grid-snap-step" type="number" density="compact" variant="outlined" hide-details v-model.number="localSettings.gridSnapStep" min="1" max="1000" />
           <div class="hint">拖动控件时对齐到的网格间隔（像素）</div>
         </div>
 
-         <div class="settings-section">
+        <div class="settings-section">
           <h3>画布背景</h3>
           <label for="canvas-bg-color">背景颜色</label>
-          <input
-            id="canvas-bg-color"
-            name="canvas-bg-color"
-            type="color"
-            v-model="localSettings.canvasBgColor"
-          />
+          <input id="canvas-bg-color" name="canvas-bg-color" type="color" v-model="localSettings.canvasBgColor" />
           <div class="hint">选择画布的纯色背景</div>
 
           <label for="canvas-bg-image">背景图片路径</label>
-          <input
-            id="canvas-bg-image"
-            name="canvas-bg-image"
-            type="text"
-            v-model="localSettings.canvasBgImage"
-            placeholder="输入图片 URL 或资源路径"
-          />
+          <v-text-field id="canvas-bg-image" density="compact" variant="outlined" hide-details v-model="localSettings.canvasBgImage" placeholder="输入图片 URL 或资源路径" />
           <div class="hint">留空则使用纯色背景</div>
         </div>
 
         <div class="settings-section">
           <h3>其他设置</h3>
-          <label>
-            <input type="checkbox" v-model="localSettings.autoSave" />
-            自动保存布局
-          </label>
+          <v-checkbox v-model="localSettings.autoSave" density="compact" hide-details label="自动保存布局" />
           <div class="hint">每次修改后自动保存到本地存储</div>
         </div>
       </div>
-      <div class="settings-footer">
-        <button @click="handleReset">重置为默认值</button>
-        <button @click="handleSave">保存</button>
-      </div>
-    </div>
-  </div>
+      <v-card-actions class="settings-footer">
+        <v-btn variant="text" color="secondary" @click="handleReset">重置为默认值</v-btn>
+        <v-btn variant="flat" color="primary" @click="handleSave">保存</v-btn>
+      </v-card-actions>
+    </v-card>
+  </v-dialog>
 </template>
 
 <script setup lang="ts">
@@ -107,6 +89,12 @@ watch(() => props.settings, (newVal) => {
 
 const close = () => {
   emit('update:showSettings', false);
+};
+
+const onDialogModelUpdate = (value: boolean) => {
+  if (!value) {
+    close();
+  }
 };
 
 const handleSave = () => {
@@ -173,23 +161,9 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-.settings-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.7);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-}
-
 .settings-dialog {
   background: #2d2d30;
   border: 1px solid #3e3e42;
-  border-radius: 8px;
   width: 500px;
   max-width: 90vw;
   max-height: 90vh;
@@ -210,25 +184,6 @@ onBeforeUnmount(() => {
   margin: 0;
   font-size: 18px;
   color: #cccccc;
-}
-
-.close-btn {
-  background: none;
-  border: none;
-  color: #cccccc;
-  font-size: 24px;
-  cursor: pointer;
-  padding: 0;
-  width: 30px;
-  height: 30px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 4px;
-}
-
-.close-btn:hover {
-  background: #3e3e42;
 }
 
 .settings-content {
@@ -293,33 +248,6 @@ onBeforeUnmount(() => {
   display: flex;
   justify-content: flex-end;
   gap: 10px;
-}
-
-.settings-footer button {
-  padding: 6px 16px;
-  font-size: 12px;
-  border-radius: 4px;
-  cursor: pointer;
-}
-
-.settings-footer button:first-child {
-  background: #3e3e42;
-  color: #cccccc;
-  border: 1px solid #3e3e42;
-}
-
-.settings-footer button:first-child:hover {
-  background: #4a4a4a;
-}
-
-.settings-footer button:last-child {
-  background: #007acc;
-  color: white;
-  border: 1px solid #007acc;
-}
-
-.settings-footer button:last-child:hover {
-  background: #005a9e;
 }
 </style>
 

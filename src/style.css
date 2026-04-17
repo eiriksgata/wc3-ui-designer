@@ -13,8 +13,11 @@ body {
 }
 
 body {
-    background: #1e1e1e;
-    color: #eee;
+    background: rgb(var(--v-theme-background));
+    color: rgb(var(--v-theme-on-background));
+    transition:
+        background-color 0.2s ease,
+        color 0.2s ease;
 }
 
 #app {

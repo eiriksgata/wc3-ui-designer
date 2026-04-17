@@ -1,22 +1,37 @@
 <template>
-    <div v-if="show" class="export-overlay" @click.self="emitClose">
-        <div class="export-dialog export-dialog-large" :style="dialogStyle" @mousedown.stop>
+    <v-dialog
+        :model-value="show"
+        width="760"
+        scrim="rgba(9, 11, 15, 0.72)"
+        @update:model-value="onDialogModelUpdate"
+    >
+        <v-card class="export-dialog export-dialog-large" :style="dialogStyle" @mousedown.stop rounded="xl" elevation="12">
             <h3 class="export-header" @mousedown.prevent="onDragStart">导出选项</h3>
-            <div class="export-body" @click="showPluginDropdown = false">
+            <div class="export-body">
                 <!-- 导出资源：勾选 + 路径整行在一行 -->
                 <div class="export-section">
                     <div class="export-line">
-                        <label class="export-option">
-                            <input type="checkbox" v-model="exportResourcesEnabledModel" />
-                            <strong>导出资源</strong>
-                        </label>
+                        <v-checkbox
+                            v-model="exportResourcesEnabledModel"
+                            density="compact"
+                            hide-details
+                            color="primary"
+                            label="导出资源"
+                            class="export-option-checkbox"
+                        />
                         <div v-if="exportResourcesEnabledModel" class="export-path-inline">
                             <span class="export-path-inline-label">资源导出路径：</span>
                             <div class="export-path-input">
-                                <input id="export-resources-path" type="text" v-model="exportResourcesPathModel"
-                                    placeholder="选择资源导出目录..." readonly />
-                                <button @click.stop="emitSelectExportResourcesPath"
-                                    class="btn-select-path">选择路径</button>
+                                <v-text-field
+                                    id="export-resources-path"
+                                    v-model="exportResourcesPathModel"
+                                    placeholder="选择资源导出目录..."
+                                    readonly
+                                    density="compact"
+                                    variant="outlined"
+                                    hide-details
+                                />
+                                <v-btn @click.stop="emitSelectExportResourcesPath" class="btn-select-path" size="small" color="primary" variant="flat">选择路径</v-btn>
                             </div>
                         </div>
                     </div>
@@ -24,8 +39,14 @@
                     <!-- 导出代码：勾选 + 路径整行在一行 -->
                     <div class="export-line">
                         <label class="export-option">
-                            <input type="checkbox" v-model="exportCodeEnabledModel" />
-                            <strong>导出代码</strong>
+                            <v-checkbox
+                                v-model="exportCodeEnabledModel"
+                                density="compact"
+                                hide-details
+                                color="primary"
+                                label="导出代码"
+                                class="export-option-checkbox"
+                            />
                             <span v-if="currentPlugin" class="export-format-badge">
                                 ({{ currentPlugin.outputFormat?.toUpperCase() || 'CODE' }})
                             </span>
@@ -33,9 +54,16 @@
                         <div v-if="exportCodeEnabledModel" class="export-path-inline">
                             <span class="export-path-inline-label">代码导出路径：</span>
                             <div class="export-path-input">
-                                <input id="export-code-path" type="text" v-model="exportCodePathModel"
-                                    :placeholder="`选择 ${currentPlugin?.outputFormat?.toUpperCase() || '代码'} 文件保存位置...`" readonly />
-                                <button @click.stop="emitSelectExportCodePath" class="btn-select-path">选择路径</button>
+                                <v-text-field
+                                    id="export-code-path"
+                                    v-model="exportCodePathModel"
+                                    :placeholder="`选择 ${currentPlugin?.outputFormat?.toUpperCase() || '代码'} 文件保存位置...`"
+                                    readonly
+                                    density="compact"
+                                    variant="outlined"
+                                    hide-details
+                                />
+                                <v-btn @click.stop="emitSelectExportCodePath" class="btn-select-path" size="small" color="primary" variant="flat">选择路径</v-btn>
                             </div>
                         </div>
                     </div>
@@ -45,45 +73,33 @@
                 <div class="export-section">
                     <label for="export-plugin-select" style="display: block; margin-bottom: 8px;">选择导出插件：</label>
                     <div class="export-plugin-select-group">
-                        <div class="custom-select-wrapper" @click.stop>
-                            <button type="button" class="custom-select-button"
-                                @click.stop="showPluginDropdown = !showPluginDropdown">
-                                <span class="plugin-display-name">
-                                    {{ currentPluginName }}
-                                    <span v-if="currentPlugin" class="plugin-format">
-                                        ({{ currentPlugin.outputFormat?.toUpperCase() || 'CODE' }})
-                                    </span>
-                                </span>
-                                <span class="custom-select-arrow">▼</span>
-                            </button>
-                            <div v-if="showPluginDropdown" class="custom-select-dropdown" @click.stop>
-                                <div v-for="plugin in exportPlugins" :key="plugin.id" class="custom-select-option"
-                                    :class="{ 'selected': plugin.id === selectedExportPluginModel }"
-                                    @click.stop="selectPlugin(plugin.id)">
-                                    <span class="plugin-name">
-                                        {{ plugin.name }}
-                                        <span class="plugin-format-small">({{ plugin.outputFormat?.toUpperCase() || 'CODE' }})</span>
-                                        <span v-if="plugin.type === 'builtin'" class="plugin-badge">内置</span>
-                                    </span>
-                                    <button v-if="plugin.type !== 'custom' || plugin.id === 'default'"
-                                        class="plugin-delete-btn" @click.stop="emitDeletePlugin(plugin.id)"
-                                        title="删除插件" style="display: none;">
-                                        ×
-                                    </button>
-                                    <button v-else
-                                        class="plugin-delete-btn" @click.stop="emitDeletePlugin(plugin.id)"
-                                        title="删除插件">
-                                        ×
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                        <button @click="emitLoadCustomPlugin" class="btn-select-path">加载插件</button>
-                        <button @click="emitCreateNewPlugin" class="btn-select-path">新建插件</button>
-                        <button v-if="currentPlugin && currentPlugin.type === 'custom'" @click="emitEditPlugin"
-                            class="btn-select-path">
+                        <v-select
+                            id="export-plugin-select"
+                            v-model="selectedExportPluginModel"
+                            :items="pluginItems"
+                            item-title="title"
+                            item-value="value"
+                            density="compact"
+                            variant="outlined"
+                            hide-details
+                            class="plugin-select"
+                        />
+                        <v-btn @click="emitLoadCustomPlugin" class="btn-select-path" size="small" color="primary" variant="flat">加载插件</v-btn>
+                        <v-btn @click="emitCreateNewPlugin" class="btn-select-path" size="small" color="primary" variant="flat">新建插件</v-btn>
+                        <v-btn v-if="currentPlugin && currentPlugin.type === 'custom'" @click="emitEditPlugin"
+                            class="btn-select-path" size="small" color="primary" variant="flat">
                             编辑
-                        </button>
+                        </v-btn>
+                        <v-btn
+                            v-if="currentPlugin && currentPlugin.type === 'custom'"
+                            @click="emitDeletePlugin(currentPlugin.id)"
+                            class="btn-select-path"
+                            size="small"
+                            color="error"
+                            variant="tonal"
+                        >
+                            删除
+                        </v-btn>
                     </div>
                     <div v-if="currentPlugin && currentPlugin.description" class="plugin-description">
                         {{ currentPlugin.description }}
@@ -92,22 +108,30 @@
 
                 <div class="hint">至少选择一项导出选项。</div>
             </div>
-            <div class="export-footer">
-                <button @click="emitClose">取消</button>
-                <button @click="emitDoExport" :disabled="!exportResourcesEnabledModel && !exportCodeEnabledModel">
+            <v-card-actions class="export-footer">
+                <v-btn @click="emitClose" variant="text" color="secondary">取消</v-btn>
+                <v-btn @click="emitDoExport" variant="flat" color="primary" :disabled="!exportResourcesEnabledModel && !exportCodeEnabledModel">
                     导出
-                </button>
-            </div>
-        </div>
-    </div>
+                </v-btn>
+            </v-card-actions>
+        </v-card>
+    </v-dialog>
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, ref, watch, type PropType } from 'vue';
+
+interface ExportPluginItem {
+    id: string;
+    name: string;
+    outputFormat?: string;
+    type?: string;
+    description?: string;
+}
 
 const props = defineProps({
     show: { type: Boolean, default: false },
-    exportPlugins: { type: Array, default: () => [] },
+    exportPlugins: { type: Array as PropType<ExportPluginItem[]>, default: () => [] },
     // 当前 UI 缩放，用于修正拖动偏移（缩放后屏幕像素与逻辑坐标不一致）
     uiZoom: { type: Number, default: 1 },
 });
@@ -129,13 +153,15 @@ const emit = defineEmits([
     'do-export',
 ]);
 
-const showPluginDropdown = ref(false);
-
 const currentPlugin = computed(() =>
     props.exportPlugins.find((p) => p.id === selectedExportPluginModel.value),
 );
-const currentPluginName = computed(() => currentPlugin.value?.name || '选择插件');
-const currentPluginIsBuiltin = computed(() => currentPlugin.value?.type === 'builtin');
+const pluginItems = computed(() =>
+    props.exportPlugins.map((plugin) => ({
+        title: `${plugin.name} (${plugin.outputFormat?.toUpperCase() || 'CODE'})${plugin.type === 'builtin' ? ' [内置]' : ''}`,
+        value: plugin.id,
+    })),
+);
 const pickingResourcesPath = ref(false);
 const pickingCodePath = ref(false);
 
@@ -167,10 +193,10 @@ const emitCreateNewPlugin = () => emit('create-new-plugin');
 const emitEditPlugin = () => emit('edit-plugin');
 const emitDeletePlugin = (id: string) => emit('delete-plugin', id);
 const emitDoExport = () => emit('do-export');
-
-const selectPlugin = (pluginId: string) => {
-    selectedExportPluginModel.value = pluginId;
-    showPluginDropdown.value = false;
+const onDialogModelUpdate = (value: boolean) => {
+    if (!value) {
+        emitClose();
+    }
 };
 
 // --- 拖动逻辑 ---
@@ -224,23 +250,9 @@ watch(
 </script>
 
 <style scoped>
-.export-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(0, 0, 0, 0.6);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 1500;
-}
-
 .export-dialog {
     background: #2d2d30;
     border: 1px solid #3e3e42;
-    border-radius: 8px;
     width: 420px;
     max-width: 90vw;
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
@@ -299,24 +311,6 @@ watch(
     color: #ccc;
 }
 
-.export-body input[type='text'] {
-    width: 100%;
-    padding: 6px 8px;
-    background: #1a1a1a;
-    border: 1px solid #3e3e42;
-    color: #ccc;
-    border-radius: 4px;
-    box-sizing: border-box;
-}
-
-/* 表单控件内仍然允许正常选中和复制 */
-.export-dialog input,
-.export-dialog button,
-.export-dialog select,
-.export-dialog textarea {
-    user-select: text;
-}
-
 .export-option {
     display: inline-flex;
     align-items: center;
@@ -332,11 +326,6 @@ watch(
 .export-line .export-option {
     position: relative;
     top: -1px;
-}
-
-.export-option input[type='checkbox'] {
-    margin: 0;
-    cursor: pointer;
 }
 
 .export-option strong {
@@ -373,22 +362,9 @@ watch(
 }
 
 .btn-select-path {
-    padding: 6px 12px;
-    background: #0e639c;
-    border: 1px solid #1177bb;
-    color: #fff;
-    border-radius: 4px;
-    cursor: pointer;
     font-size: 12px;
     white-space: nowrap;
-}
-
-.btn-select-path:hover {
-    background: #1177bb;
-}
-
-.btn-select-path:active {
-    background: #0a4d73;
+    letter-spacing: 0;
 }
 
 .export-footer {
@@ -406,116 +382,9 @@ watch(
     width: 100%;
 }
 
-.custom-select-wrapper {
-    position: relative;
+.plugin-select {
     flex: 1;
-    min-width: 200px;
-}
-
-.custom-select-button {
-    width: 100%;
-    padding: 6px 10px;
-    background: #1e1e1e;
-    border: 1px solid #3e3e42;
-    border-radius: 4px;
-    color: #ccc;
-    font-size: 13px;
-    cursor: pointer;
-    text-align: left;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-}
-
-.custom-select-button:hover {
-    border-color: #4fc3f7;
-}
-
-.custom-select-arrow {
-    font-size: 10px;
-    opacity: 0.7;
-}
-
-.custom-select-dropdown {
-    position: absolute;
-    top: 100%;
-    left: 0;
-    right: 0;
-    margin-top: 4px;
-    background: #252526;
-    border: 1px solid #3e3e42;
-    border-radius: 4px;
-    max-height: 200px;
-    overflow-y: auto;
-    z-index: 1000;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-}
-
-.custom-select-option {
-    padding: 8px 10px;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    cursor: pointer;
-    border-bottom: 1px solid #2d2d30;
-}
-
-.custom-select-option:last-child {
-    border-bottom: none;
-}
-
-.custom-select-option:hover {
-    background: #2a2d2e;
-}
-
-.custom-select-option.selected {
-    background: #094771;
-}
-
-.plugin-name {
-    flex: 1;
-    color: #ccc;
-}
-
-.plugin-delete-btn {
-    width: 20px;
-    height: 20px;
-    padding: 0;
-    margin-left: 8px;
-    background: #d32f2f;
-    border: none;
-    border-radius: 3px;
-    color: white;
-    font-size: 16px;
-    line-height: 1;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    opacity: 0.8;
-}
-
-.plugin-delete-btn:hover {
-    opacity: 1;
-    background: #f44336;
-}
-
-.plugin-display-name {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-}
-
-.plugin-format {
-    font-size: 11px;
-    color: #888;
-    font-weight: normal;
-}
-
-.plugin-format-small {
-    font-size: 10px;
-    color: #888;
-    margin-left: 4px;
+    min-width: 260px;
 }
 
 .plugin-badge {
@@ -539,5 +408,10 @@ watch(
     font-size: 11px;
     color: #888;
     font-style: italic;
+}
+
+.export-option-checkbox {
+    margin-top: 0;
+    margin-bottom: 0;
 }
 </style>

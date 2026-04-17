@@ -49,18 +49,47 @@ const callRuntime = async (method, params = {}, timeoutMs = 15000) => {
 
 const runTransaction = async (actions) => {
   const transactionId = `template-tx-${Date.now()}`;
+  const sessionId = `template-session-${Date.now()}`;
+  const enrichedActions = actions.map((action, index) => ({
+    ...action,
+    actionId: action.actionId || `template-action-${index + 1}-${Date.now()}`,
+  }));
   const before = await callRuntime('getProjectSnapshot');
-  const apply = await callRuntime('batchApply', { actions });
+  const apply = await callRuntime('batchApply', { actions: enrichedActions, sessionId });
   if (apply?.ok === false || (Array.isArray(apply?.errors) && apply.errors.length > 0)) {
     await callRuntime('replaceProjectSnapshot', { snapshot: before });
-    return { ok: false, rolledBack: true, transactionId, reason: 'apply failed', apply };
+    return {
+      ok: false,
+      rolledBack: true,
+      transactionId,
+      sessionId,
+      actionIds: enrichedActions.map((action) => action.actionId),
+      reason: 'apply failed',
+      apply,
+    };
   }
   const validate = await callRuntime('validate');
   if (validate?.ok === false || (Array.isArray(validate?.diagnostics) && validate.diagnostics.length > 0)) {
     await callRuntime('replaceProjectSnapshot', { snapshot: before });
-    return { ok: false, rolledBack: true, transactionId, reason: 'validate failed', validate };
+    return {
+      ok: false,
+      rolledBack: true,
+      transactionId,
+      sessionId,
+      actionIds: enrichedActions.map((action) => action.actionId),
+      reason: 'validate failed',
+      validate,
+    };
   }
-  return { ok: true, rolledBack: false, transactionId, apply, validate };
+  return {
+    ok: true,
+    rolledBack: false,
+    transactionId,
+    sessionId,
+    actionIds: enrichedActions.map((action) => action.actionId),
+    apply,
+    validate,
+  };
 };
 
 const main = async () => {
@@ -80,6 +109,12 @@ const main = async () => {
       },
     },
   ]);
+  if (txResult.sessionId) {
+    console.log(`Query actions: ui_get_audit_trail(sessionId="${txResult.sessionId}")`);
+  }
+  if (txResult.actionIds?.[0]) {
+    console.log(`Query one action: ui_get_audit_trail(actionId="${txResult.actionIds[0]}")`);
+  }
   console.log(JSON.stringify(txResult, null, 2));
 };
 

@@ -1,17 +1,36 @@
 <template>
-    <div v-if="show" class="export-overlay" @click.self="emitClose">
-        <div class="export-dialog plugin-editor-dialog">
-            <h3>插件编辑器</h3>
-            <div class="export-body">
+    <v-dialog
+        :model-value="show"
+        width="980"
+        scrim="rgba(9, 11, 15, 0.72)"
+        @update:model-value="onDialogModelUpdate"
+    >
+        <v-card class="plugin-editor-dialog" rounded="xl" elevation="12">
+            <v-card-title>插件编辑器</v-card-title>
+            <v-card-text class="export-body">
                 <div class="export-section">
                     <label for="plugin-editor-name">插件名称：</label>
-                    <input id="plugin-editor-name" type="text" v-model="nameModel" class="plugin-editor-name-input"
-                        placeholder="输入插件名称" />
+                    <v-text-field
+                        id="plugin-editor-name"
+                        v-model="nameModel"
+                        density="compact"
+                        variant="outlined"
+                        hide-details
+                        placeholder="输入插件名称"
+                    />
                 </div>
                 <div class="export-section">
                     <label for="plugin-editor-content">插件代码（TypeScript）：</label>
-                    <textarea id="plugin-editor-content" v-model="contentModel" class="plugin-editor-textarea"
-                        placeholder="输入 TypeScript 插件代码..."></textarea>
+                    <v-textarea
+                        id="plugin-editor-content"
+                        v-model="contentModel"
+                        class="plugin-editor-textarea"
+                        variant="outlined"
+                        auto-grow
+                        rows="12"
+                        hide-details
+                        placeholder="输入 TypeScript 插件代码..."
+                    />
                     <div class="plugin-editor-hint">
                         <p>提示：</p>
                         <ul>
@@ -21,14 +40,16 @@
                         </ul>
                     </div>
                 </div>
-            </div>
-            <div class="export-footer">
-                <button v-if="path" @click="emitOpenDefaultEditor" class="btn-open-editor">用默认编辑器打开</button>
-                <button @click="emitClose">取消</button>
-                <button @click="emitSave">保存</button>
-            </div>
-        </div>
-    </div>
+            </v-card-text>
+            <v-card-actions class="export-footer">
+                <v-btn v-if="path" @click="emitOpenDefaultEditor" class="btn-open-editor" variant="text" color="secondary">
+                    用默认编辑器打开
+                </v-btn>
+                <v-btn @click="emitClose" variant="text" color="secondary">取消</v-btn>
+                <v-btn @click="emitSave" variant="flat" color="primary">保存</v-btn>
+            </v-card-actions>
+        </v-card>
+    </v-dialog>
 </template>
 
 <script setup lang="ts">
@@ -45,33 +66,15 @@ const emit = defineEmits(['close', 'save', 'open-default-editor']);
 const emitClose = () => emit('close');
 const emitSave = () => emit('save');
 const emitOpenDefaultEditor = () => emit('open-default-editor');
+const onDialogModelUpdate = (value: boolean) => {
+    if (!value) emitClose();
+};
 </script>
 
 <style scoped>
-.export-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(0, 0, 0, 0.6);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 1500;
-}
-
-.export-dialog {
+.plugin-editor-dialog {
     background: #2d2d30;
     border: 1px solid #3e3e42;
-    border-radius: 8px;
-    width: 420px;
-    max-width: 90vw;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
-    padding: 16px 20px;
-}
-
-.plugin-editor-dialog {
     max-width: 800px;
     width: 90vw;
 }
@@ -94,45 +97,11 @@ const emitOpenDefaultEditor = () => emit('open-default-editor');
     color: #ccc;
 }
 
-.plugin-editor-name-input {
-    width: 100%;
-    padding: 6px 10px;
-    background: #1e1e1e;
-    border: 1px solid #3e3e42;
-    border-radius: 4px;
-    color: #ccc;
-    font-size: 13px;
-}
-
-.plugin-editor-name-input:focus {
-    outline: none;
-    border-color: #4fc3f7;
-}
-
-.plugin-editor-textarea {
-    width: 100%;
-    min-height: 300px;
-    padding: 8px;
-    background: #1e1e1e;
-    border: 1px solid #3e3e42;
-    border-radius: 4px;
-    color: #ccc;
-    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-    font-size: 13px;
-    line-height: 1.5;
-    resize: vertical;
-}
-
-.plugin-editor-textarea:focus {
-    outline: none;
-    border-color: #4fc3f7;
-}
-
 .export-footer {
-    margin-top: 16px;
     display: flex;
     justify-content: flex-end;
     gap: 10px;
+    padding: 10px 16px 16px;
 }
 
 .btn-open-editor {

@@ -6,7 +6,7 @@
 
 ## 项目结构
 
-```
+```text
 src/
 ├── components/          # Vue 组件
 │   ├── CloseProjectDialog.vue      # 关闭项目确认对话框
@@ -116,6 +116,87 @@ yarn dev
 yarn tauri:dev
 ```
 
+默认情况下，桌面程序启动时会自动尝试拉起本地 MCP Server（`mcp/server.mjs`）。
+如需关闭自动启动，可设置环境变量：
+
+```bash
+UI_DESIGNER_AUTO_START_MCP=false
+```
+
+如需指定 MCP 脚本路径，可设置：
+
+```bash
+UI_DESIGNER_MCP_SCRIPT_PATH=/absolute/path/to/mcp/server.mjs
+```
+
+### VS Code / Copilot MCP 配置示例
+
+如果你想让 VS Code（含 Copilot Agent）直接连接本地 UI Designer MCP Server，可在 VS Code 的 MCP 配置文件中加入如下 JSON（路径按你本机实际修改）：
+
+```json
+{
+  "servers": {
+    "ui-designer-local": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "D:/work/github/ui-designer/mcp/server.mjs"
+      ],
+      "env": {
+        "UI_DESIGNER_AUTO_START_MCP": "false"
+      }
+    }
+  }
+}
+```
+
+Windows 另一种写法（使用 `yarn` 启动）：
+
+```json
+{
+  "servers": {
+    "ui-designer-local": {
+      "type": "stdio",
+      "command": "yarn",
+      "args": [
+        "--cwd",
+        "D:/work/github/ui-designer",
+        "mcp:start"
+      ]
+    }
+  }
+}
+```
+
+建议：
+
+- 优先使用 `node + 绝对脚本路径`，路径最稳定。
+- 若你已经通过桌面程序自动启动了 MCP，可避免在 VS Code 侧重复起服务。
+- 如果 Copilot 看不到工具，先检查 Node 路径、脚本路径和 VS Code MCP 配置文件是否生效。
+
+### HTTP 模式（本地服务）
+
+如果你更偏好 HTTP 方式，可以启动本地网关：
+
+```bash
+yarn mcp:start:http
+```
+
+默认监听 `http://127.0.0.1:8765`，提供：
+
+- `GET /health`
+- `POST /call`（body 示例：`{ "tool": "ui_get_snapshot", "arguments": {} }`）
+
+示例请求：
+
+```bash
+curl -X POST "http://127.0.0.1:8765/call" ^
+  -H "Content-Type: application/json" ^
+  -d "{\"tool\":\"ui_validate\",\"arguments\":{}}"
+```
+
+说明：当前“UI 运行态桥接（MCP Server <-> UI App）”仍是本地 `mcp-runtime` 队列；HTTP 这里是给 AI/外部工具接入 MCP 能力的入口。
+
 ### 构建
 
 构建网页版本：
@@ -180,3 +261,44 @@ yarn type-check
 - **Vite**: 构建工具
 - **Tauri**: 桌面应用框架（可选）
 - **Yarn**: 包管理器
+
+## MCP CI 建议
+
+- **PR 快速检查**: 运行 `yarn mcp:ci-smoke`（无需 UI 运行态，适合所有 CI Runner）。
+- **Nightly/自托管检查**: 运行 `yarn mcp:ci-smoke:strict-runtime`（需要有运行中的 UI 进程和 `mcp-runtime` 桥接）。
+- **分层策略**: PR 阶段走快速 smoke，定时任务走 strict-runtime，避免普通 PR 被运行态依赖阻塞。
+
+### GitHub Actions 示例
+
+```yaml
+name: mcp-ci
+
+on:
+  pull_request:
+  schedule:
+    - cron: "0 2 * * *"
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: corepack enable
+      - run: yarn install --frozen-lockfile
+      - run: yarn mcp:ci-smoke
+
+  strict_runtime:
+    if: github.event_name == 'schedule'
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: corepack enable
+      - run: yarn install --frozen-lockfile
+      - run: yarn mcp:ci-smoke:strict-runtime
+```

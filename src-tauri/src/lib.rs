@@ -1,3 +1,133 @@
+use std::{
+    path::PathBuf,
+    process::{Child, Command, Stdio},
+    sync::Mutex,
+};
+
+use tauri::{Manager, State};
+
+struct McpServerState {
+    child: Mutex<Option<Child>>,
+}
+
+fn resolve_mcp_script_path() -> Option<PathBuf> {
+    if let Ok(explicit_path) = std::env::var("UI_DESIGNER_MCP_SCRIPT_PATH") {
+        let path = PathBuf::from(explicit_path);
+        if path.exists() {
+            return Some(path);
+        }
+    }
+
+    let mut candidates: Vec<PathBuf> = Vec::new();
+    if let Ok(cwd) = std::env::current_dir() {
+        candidates.push(cwd.join("mcp").join("server.mjs"));
+        candidates.push(cwd.join("..").join("mcp").join("server.mjs"));
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(parent) = exe.parent() {
+            candidates.push(parent.join("mcp").join("server.mjs"));
+            candidates.push(parent.join("..").join("..").join("mcp").join("server.mjs"));
+            candidates.push(parent.join("..").join("..").join("..").join("mcp").join("server.mjs"));
+        }
+    }
+
+    candidates.into_iter().find(|path| path.exists())
+}
+
+fn start_mcp_server_inner(state: &McpServerState) -> Result<String, String> {
+    {
+        let guard = state
+            .child
+            .lock()
+            .map_err(|e| format!("MCP 进程状态锁定失败: {e}"))?;
+        if let Some(child) = guard.as_ref() {
+            return Ok(format!("MCP Server 已运行 (pid={})", child.id()));
+        }
+    }
+
+    let script_path = resolve_mcp_script_path()
+        .ok_or_else(|| "未找到 mcp/server.mjs，请检查项目目录或设置 UI_DESIGNER_MCP_SCRIPT_PATH".to_string())?;
+    let script_str = script_path
+        .to_str()
+        .ok_or_else(|| "MCP 脚本路径不是有效 UTF-8".to_string())?;
+
+    let mut command = Command::new("node");
+    command
+        .arg(script_str)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+
+    let child = command
+        .spawn()
+        .map_err(|e| format!("启动 MCP Server 失败，请确认 node 可用: {e}"))?;
+    let pid = child.id();
+
+    let mut guard = state
+        .child
+        .lock()
+        .map_err(|e| format!("MCP 进程状态锁定失败: {e}"))?;
+    *guard = Some(child);
+
+    Ok(format!("MCP Server 启动成功 (pid={pid})"))
+}
+
+fn stop_mcp_server_inner(state: &McpServerState) -> Result<String, String> {
+    let mut guard = state
+        .child
+        .lock()
+        .map_err(|e| format!("MCP 进程状态锁定失败: {e}"))?;
+    if let Some(mut child) = guard.take() {
+        child
+            .kill()
+            .map_err(|e| format!("停止 MCP Server 失败: {e}"))?;
+        let _ = child.wait();
+        return Ok("MCP Server 已停止".to_string());
+    }
+    Ok("MCP Server 未运行".to_string())
+}
+
+fn get_mcp_server_status_inner(state: &McpServerState) -> Result<(bool, Option<u32>), String> {
+    let mut guard = state
+        .child
+        .lock()
+        .map_err(|e| format!("MCP 进程状态锁定失败: {e}"))?;
+    if let Some(child) = guard.as_mut() {
+        match child.try_wait() {
+            Ok(Some(_)) => {
+                // 进程已退出，清理句柄
+                *guard = None;
+                Ok((false, None))
+            }
+            Ok(None) => Ok((true, Some(child.id()))),
+            Err(e) => Err(format!("读取 MCP 进程状态失败: {e}")),
+        }
+    } else {
+        Ok((false, None))
+    }
+}
+
+#[tauri::command]
+async fn start_mcp_server(state: State<'_, McpServerState>) -> Result<String, String> {
+    start_mcp_server_inner(&state)
+}
+
+#[tauri::command]
+async fn stop_mcp_server(state: State<'_, McpServerState>) -> Result<String, String> {
+    stop_mcp_server_inner(&state)
+}
+
+#[tauri::command]
+async fn get_mcp_server_status(
+    state: State<'_, McpServerState>,
+) -> Result<serde_json::Value, String> {
+    let (running, pid) = get_mcp_server_status_inner(&state)?;
+    Ok(serde_json::json!({
+        "running": running,
+        "pid": pid,
+    }))
+}
+
 // 用系统默认编辑器打开文件
 #[tauri::command]
 async fn open_file_with_default_editor(file_path: String) -> Result<(), String> {
@@ -114,7 +244,10 @@ async fn send_f4_to_war3() -> Result<(), String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
+        .manage(McpServerState {
+            child: Mutex::new(None),
+        })
         // 日志插件（仅调试模式）
         .setup(|app| {
             if cfg!(debug_assertions) {
@@ -123,6 +256,17 @@ pub fn run() {
                         .level(log::LevelFilter::Info)
                         .build(),
                 )?;
+            }
+
+            // 默认自动启动本地 MCP Server，可通过环境变量显式关闭
+            let auto_start = std::env::var("UI_DESIGNER_AUTO_START_MCP")
+                .map(|value| value != "0" && value.to_lowercase() != "false")
+                .unwrap_or(true);
+            if auto_start {
+                let state = app.state::<McpServerState>();
+                if let Err(err) = start_mcp_server_inner(&state) {
+                    eprintln!("[ui-designer] 自动启动 MCP Server 失败: {err}");
+                }
             }
             Ok(())
         })
@@ -133,8 +277,18 @@ pub fn run() {
         // 注册命令
         .invoke_handler(tauri::generate_handler![
             open_file_with_default_editor,
-            send_f4_to_war3
+            send_f4_to_war3,
+            start_mcp_server,
+            stop_mcp_server,
+            get_mcp_server_status
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application");
+
+    app.run(|app_handle, event| {
+        if let tauri::RunEvent::Exit = event {
+            let state = app_handle.state::<McpServerState>();
+            let _ = stop_mcp_server_inner(&state);
+        }
+    });
 }

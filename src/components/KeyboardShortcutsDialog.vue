@@ -1,11 +1,18 @@
 <template>
-    <div v-if="visible" class="shortcuts-dialog-overlay" @click.self="close">
-        <div class="shortcuts-dialog">
+    <v-dialog
+        :model-value="visible"
+        width="700"
+        scrim="rgba(9, 11, 15, 0.72)"
+        @update:model-value="onDialogModelUpdate"
+    >
+        <v-card class="shortcuts-dialog" rounded="xl" elevation="12">
             <div class="shortcuts-header">
                 <h2>快捷键</h2>
-                <button class="close-btn" @click="close">×</button>
+                <v-btn icon variant="text" size="small" @click="close">
+                    <v-icon icon="mdi-close" />
+                </v-btn>
             </div>
-            <div class="shortcuts-content">
+            <v-card-text class="shortcuts-content">
                 <div class="shortcuts-section">
                     <h3>文件操作</h3>
                     <div class="shortcut-item">
@@ -89,16 +96,16 @@
                         <span class="shortcut-key">F4</span>
                     </div>
                 </div>
-            </div>
-            <div class="shortcuts-footer">
-                <button @click="close">关闭</button>
-            </div>
-        </div>
-    </div>
+            </v-card-text>
+            <v-card-actions class="shortcuts-footer">
+                <v-btn @click="close" variant="flat" color="primary">关闭</v-btn>
+            </v-card-actions>
+        </v-card>
+    </v-dialog>
 </template>
 
 <script setup lang="ts">
-import { watch, onMounted, onBeforeUnmount } from 'vue';
+import { watch, onBeforeUnmount } from 'vue';
 
 const props = defineProps<{
     visible: boolean;
@@ -110,6 +117,9 @@ const emit = defineEmits<{
 
 const close = () => {
     emit('update:visible', false);
+};
+const onDialogModelUpdate = (value: boolean) => {
+    if (!value) close();
 };
 
 const handleEscape = (ev: KeyboardEvent) => {
@@ -132,19 +142,6 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-.shortcuts-dialog-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(0, 0, 0, 0.6);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 1000;
-}
-
 .shortcuts-dialog {
     background: #2d2d30;
     border: 1px solid #3e3e42;
@@ -172,31 +169,8 @@ onBeforeUnmount(() => {
     font-weight: 500;
 }
 
-.close-btn {
-    background: transparent;
-    border: none;
-    color: #ccc;
-    font-size: 24px;
-    cursor: pointer;
-    padding: 0;
-    width: 28px;
-    height: 28px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 3px;
-    line-height: 1;
-}
-
-.close-btn:hover {
-    background: #3a3a3d;
-    color: #fff;
-}
-
 .shortcuts-content {
-    padding: 20px;
     overflow-y: auto;
-    flex: 1;
 }
 
 .shortcuts-section {
@@ -250,19 +224,5 @@ onBeforeUnmount(() => {
     border-top: 1px solid #3e3e42;
     display: flex;
     justify-content: flex-end;
-}
-
-.shortcuts-footer button {
-    background: #0e639c;
-    color: #fff;
-    border: none;
-    padding: 6px 16px;
-    border-radius: 3px;
-    cursor: pointer;
-    font-size: 13px;
-}
-
-.shortcuts-footer button:hover {
-    background: #1177bb;
 }
 </style>

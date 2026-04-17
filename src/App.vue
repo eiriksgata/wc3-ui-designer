@@ -1,15 +1,18 @@
 <template>
-  <div class="app-layout" :style="{ '--ui-zoom': uiZoom.toFixed(2) }">
+  <v-app>
+    <div class="app-layout" :class="activeThemeName" :style="{ '--ui-zoom': uiZoom.toFixed(2) }">
     <div class="zoom-root">
       <!-- 顶部菜单栏：跨越整个窗口，包括左侧控件面板 -->
       <TopMenuBar :grid-snap-enabled="gridSnapEnabled" :message="message" :recent-projects="recentProjects"
+        :theme-name="activeThemeName"
         @new-project="handleNewProject" @open-project="loadProjectFromFile" @open-recent-project="openRecentProject"
         @save-project="saveProjectToFile" @save-as-project="saveProjectAsFile" @undo="undoLayout" @redo="redoLayout"
         @copy="copySelection" @paste="pasteClipboard" @delete-selected="deleteSelectedWithHistory"
         @clear-all="clearAllWithHistory" @align-left="alignLeft" @align-top="alignTop" @align-h-center="alignHCenter"
         @align-v-center="alignVCenter" @align-same-width="alignSameWidth" @align-same-height="alignSameHeight"
         @toggle-grid-snap="toggleGridSnap" @import-resources="onImportResourcesClick" @open-settings="showSettings = true"
-        @open-export="showExportPanel = true" @open-help="showKeyboardShortcuts = true" />
+        @open-export="showExportPanel = true" @open-help="showKeyboardShortcuts = true"
+        @open-mcp-guide="showMcpUsageGuide = true" @toggle-theme="toggleAppTheme" />
 
       <div class="main-row">
         <div class="left panel" :style="{ width: leftWidth + 'px' }" ref="leftPanelRef">
@@ -217,16 +220,16 @@
     </div> <!-- zoom-root -->
 
     <!-- 导出/插件等通用确认对话框 -->
-    <div v-if="showConfirmDialog" class="confirm-dialog-overlay" @click.self="confirmDialogCancel">
-      <div class="confirm-dialog">
-        <div class="confirm-dialog-title">确认</div>
-        <div class="confirm-dialog-message">{{ confirmDialogMessage }}</div>
-        <div class="confirm-dialog-buttons">
-          <button @click="confirmDialogCancel" class="confirm-dialog-btn cancel">取消</button>
-          <button @click="confirmDialogOk" class="confirm-dialog-btn ok">确定</button>
-        </div>
-      </div>
-    </div>
+    <v-dialog :model-value="showConfirmDialog" persistent width="460" scrim="rgba(9, 11, 15, 0.72)">
+      <v-card class="confirm-card" rounded="xl" elevation="12">
+        <v-card-title class="confirm-card-title">确认</v-card-title>
+        <v-card-text class="confirm-card-message">{{ confirmDialogMessage }}</v-card-text>
+        <v-card-actions class="confirm-card-actions">
+          <v-btn variant="text" color="secondary" @click="confirmDialogCancel">取消</v-btn>
+          <v-btn variant="flat" color="primary" @click="confirmDialogOk">确定</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
 
     <!-- 关闭项目确认对话框 -->
     <CloseProjectDialog :show="showCloseConfirm" @save-and-close="handleCloseConfirmSaveAndClose"
@@ -242,7 +245,10 @@
 
     <!-- 快捷键帮助对话框 -->
     <KeyboardShortcutsDialog v-model:visible="showKeyboardShortcuts" />
-  </div>
+    <!-- MCP 使用说明对话框 -->
+    <McpUsageDialog v-model:visible="showMcpUsageGuide" />
+    </div>
+  </v-app>
 </template>
 
 <script setup lang="ts">
@@ -259,8 +265,10 @@ import ExportResultDialog from './components/ExportResultDialog.vue';
 import PluginDebugDialog from './components/PluginDebugDialog.vue';
 import PluginEditorDialog from './components/PluginEditorDialog.vue';
 import KeyboardShortcutsDialog from './components/KeyboardShortcutsDialog.vue';
+import McpUsageDialog from './components/McpUsageDialog.vue';
 import TopMenuBar from './components/TopMenuBar.vue';
 import PropertiesPanel from './components/PropertiesPanel.vue';
+import { activeThemeName, toggleAppTheme } from './plugins/vuetify';
 import { useSettings } from './composables/useSettings';
 import { useCanvas } from './composables/useCanvas';
 import { useRuler } from './composables/useRuler';
@@ -290,6 +298,7 @@ const { showSettings, settings, saveSettings, resetSettings, loadSettings } = us
 
 // 快捷键帮助对话框显示状态
 const showKeyboardShortcuts = ref(false);
+const showMcpUsageGuide = ref(false);
 const canvas = useCanvas(settings);
 const { rulerStep, rulerXTicks, rulerYTicks } = useRuler(settings, canvas.canvasSize, canvas.canvasScale, canvas.panX, canvas.panY);
 const { gridMode, gridSnapEnabled, gridStep, gridXTicks, gridYTicks, toggleGridSnap } = useGrid(settings);
@@ -1167,6 +1176,76 @@ onMounted(() => {
   overflow: hidden;
 }
 
+.app-layout.appLight {
+  color: #1f2430;
+}
+
+.app-layout.appLight .left,
+.app-layout.appLight .right {
+  background: #f6f8fc;
+  border-color: #d3dae6;
+}
+
+.app-layout.appLight .center {
+  background: #edf1f8;
+}
+
+.app-layout.appLight .menubar,
+.app-layout.appLight .toolbar {
+  background: #e8edf6;
+  border-color: #cfd8e6;
+}
+
+.app-layout.appLight .menu,
+.app-layout.appLight .menubar-msg,
+.app-layout.appLight .hint,
+.app-layout.appLight h3,
+.app-layout.appLight label {
+  color: #2a3140;
+}
+
+.app-layout.appLight button {
+  border-color: #c0cada;
+  background: #f7f9fd;
+  color: #223049;
+}
+
+.app-layout.appLight button:hover {
+  background: #eef3fb;
+}
+
+.app-layout.appLight input[type='text'],
+.app-layout.appLight input[type='number'],
+.app-layout.appLight select,
+.app-layout.appLight textarea,
+.app-layout.appLight .parent-display {
+  border-color: #c0cada;
+  background: #ffffff;
+  color: #243247;
+}
+
+.app-layout.appLight .canvas {
+  border-color: #ccd5e4;
+  background: #e8edf4;
+}
+
+.app-layout.appLight :deep(.v-card) {
+  border-color: #d3dceb !important;
+  box-shadow: 0 10px 30px rgba(26, 43, 77, 0.12);
+}
+
+.app-layout.appLight :deep(.v-field) {
+  background: #fff;
+}
+
+.app-layout.appLight :deep(.v-list) {
+  background: #fff;
+}
+
+.app-layout.appLight :deep(.v-btn.v-btn--variant-text) {
+  color: #31415f;
+}
+
 .zoom-root {
   display: flex;
   flex-direction: column;
@@ -1473,63 +1552,6 @@ onMounted(() => {
   background: transparent;
 }
 
-.menubar {
-  padding: 4px 10px;
-  border-bottom: 1px solid #333;
-  background: #202020;
-  display: flex;
-  gap: 12px;
-  align-items: center;
-}
-
-.menu {
-  position: relative;
-  color: #eee;
-  font-size: 13px;
-  cursor: default;
-  user-select: none;
-}
-
-.menu-title {
-  padding: 2px 6px;
-  border-radius: 3px;
-}
-
-.menu-title:hover {
-  background: #333;
-}
-
-.menu-dropdown {
-  position: absolute;
-  top: 100%;
-  left: 0;
-  background: #2d2d30;
-  border: 1px solid #3e3e42;
-  border-radius: 3px;
-  min-width: 140px;
-  padding: 4px 0;
-  display: none;
-  flex-direction: column;
-  z-index: 50;
-}
-
-.menu:hover .menu-dropdown {
-  display: flex;
-}
-
-.menu-dropdown button {
-  width: 100%;
-  justify-content: flex-start;
-  padding: 4px 12px;
-  border-radius: 0;
-  border: none;
-  background: transparent;
-}
-
-.menu-dropdown button:hover {
-  background: #3a3a3d;
-}
-
 .menubar-msg {
   margin-left: auto;
   font-size: 12px;
@@ -1820,75 +1842,30 @@ onMounted(() => {
   background: #f44336;
 }
 
-/* 确认对话框样式 */
-.confirm-dialog-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.6);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 10000;
+.confirm-card {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: linear-gradient(165deg, #2d3139 0%, #252831 100%);
 }
 
-.confirm-dialog {
-  background: #252526;
-  border: 1px solid #3e3e42;
-  border-radius: 8px;
-  padding: 20px;
-  min-width: 300px;
-  max-width: 500px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+.confirm-card-title {
+  font-size: 18px;
+  font-weight: 650;
+  color: #f2f6ff;
+  padding: 18px 20px 6px;
 }
 
-.confirm-dialog-title {
-  font-size: 16px;
-  font-weight: bold;
-  color: #eee;
-  margin-bottom: 12px;
-}
-
-.confirm-dialog-message {
-  color: #ccc;
+.confirm-card-message {
+  color: #c5cfdf;
   font-size: 14px;
-  line-height: 1.5;
-  margin-bottom: 20px;
+  line-height: 1.6;
+  padding: 6px 20px 4px;
 }
 
-.confirm-dialog-buttons {
+.confirm-card-actions {
+  padding: 12px 16px 16px;
   display: flex;
   justify-content: flex-end;
   gap: 8px;
-}
-
-.confirm-dialog-btn {
-  padding: 6px 16px;
-  border: none;
-  border-radius: 4px;
-  font-size: 13px;
-  cursor: pointer;
-  transition: background-color 0.2s;
-}
-
-.confirm-dialog-btn.cancel {
-  background: #3e3e42;
-  color: #ccc;
-}
-
-.confirm-dialog-btn.cancel:hover {
-  background: #4e4e52;
-}
-
-.confirm-dialog-btn.ok {
-  background: #0e639c;
-  color: #fff;
-}
-
-.confirm-dialog-btn.ok:hover {
-  background: #1177bb;
 }
 
 .plugin-editor-dialog {
@@ -2084,50 +2061,6 @@ label {
   background: #1a1a1a;
   overflow: hidden;
   position: relative;
-}
-
-.welcome-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.6);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 2000;
-}
-
-.welcome-dialog {
-  background: #252526;
-  border-radius: 6px;
-  padding: 20px 24px;
-  min-width: 360px;
-  max-width: 480px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
-}
-
-.welcome-dialog h2 {
-  margin: 0 0 12px;
-  font-size: 18px;
-}
-
-.welcome-dialog p {
-  margin: 4px 0;
-  font-size: 13px;
-}
-
-.welcome-actions {
-  display: flex;
-  gap: 12px;
-  margin: 16px 0 8px;
-}
-
-.welcome-actions button {
-  flex: 1;
-}
-
-.welcome-hint {
-  font-size: 12px;
-  color: #aaa;
 }
 
 .canvas.panning {

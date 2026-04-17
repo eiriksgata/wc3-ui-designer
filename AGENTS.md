@@ -34,6 +34,8 @@ Use only scripts defined in `package.json`:
 - `yarn tauri:build`: build desktop installer/bundle.
 - `yarn mcp:start`: start MCP server script.
 - `yarn mcp:e2e`: run MCP end-to-end checks.
+- `yarn mcp:ci-smoke`: run CI-oriented MCP smoke checks.
+- `yarn mcp:ci-smoke:strict-runtime`: run smoke checks with live runtime bridge probe.
 
 ## Frontend Architecture Rules
 
@@ -63,6 +65,8 @@ Use only scripts defined in `package.json`:
 
 - `mcp/server.mjs` and related scripts should stay runnable with plain Node.
 - Validate any MCP protocol changes with `yarn mcp:e2e`.
+- For CI readiness of MCP runtime contracts, run `yarn mcp:ci-smoke`.
+- If a CI worker can run the UI process, prefer `yarn mcp:ci-smoke:strict-runtime`.
 - Keep tool contracts explicit and stable; prefer additive changes over breaking renames.
 
 ## Code Quality And Safety

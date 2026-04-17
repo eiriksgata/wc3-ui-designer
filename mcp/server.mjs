@@ -214,11 +214,35 @@ server.tool(
   '获取最近动作审计日志（sessionId/actionId）',
   {
     limit: z.number().int().min(1).max(500).optional(),
+    sessionId: z.string().optional(),
+    actionId: z.string().optional(),
+    type: z.string().optional(),
   },
-  async ({ limit }) => {
+  async ({ limit, sessionId, actionId, type }) => {
     try {
-      const data = engine.getAuditTrail(limit || 100);
-      return { content: [{ type: 'text', text: JSON.stringify(wrapData({ events: data }), null, 2) }] };
+      let events = engine.getAuditTrail(limit || 100);
+      if (sessionId) {
+        events = events.filter((event) => event.sessionId === sessionId);
+      }
+      if (actionId) {
+        events = events.filter((event) => event.actionId === actionId);
+      }
+      if (type) {
+        events = events.filter((event) => event.type === type);
+      }
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify(
+            wrapData({
+              events,
+              filters: { sessionId: sessionId || null, actionId: actionId || null, type: type || null },
+            }),
+            null,
+            2,
+          ),
+        }],
+      };
     } catch (error) {
       return { content: [{ type: 'text', text: JSON.stringify(normalizeError(error), null, 2) }] };
     }
@@ -264,11 +288,17 @@ server.tool(
   async ({ actions, validateAfterApply, timeoutMs, transactionId }) => {
     try {
       const txId = transactionId || createId('tx');
+      const sessionId = createId(`session-${txId}`);
+      const enrichedActions = actions.map((action, index) => ({
+        ...action,
+        actionId: action.actionId || action.idempotencyKey || createId(`action-${index + 1}`),
+      }));
       const effectiveTimeout = timeoutMs || 20000;
       engine.appendTransactionEvent({
         transactionId: txId,
+        sessionId,
         phase: 'start',
-        actionCount: actions.length,
+        actionCount: enrichedActions.length,
       });
       const beforeSnapshot = await callRuntimeBridge({
         method: 'getProjectSnapshot',
@@ -277,7 +307,7 @@ server.tool(
       });
       const applyResult = await callRuntimeBridge({
         method: 'batchApply',
-        params: { actions },
+        params: { actions: enrichedActions, sessionId },
         timeoutMs: effectiveTimeout,
       });
 
@@ -289,9 +319,13 @@ server.tool(
         });
         engine.appendTransactionEvent({
           transactionId: txId,
+          sessionId,
           phase: 'rollback',
           reason: 'apply_failed',
-          details: applyResult,
+          details: {
+            applyResult,
+            actionIds: enrichedActions.map((action) => action.actionId),
+          },
         });
         return {
           content: [{
@@ -300,8 +334,10 @@ server.tool(
               wrapData(
                 {
                   transactionId: txId,
+                  sessionId,
                   rolledBack: true,
                   applyResult,
+                  actionIds: enrichedActions.map((action) => action.actionId),
                 },
                 ['runtime transaction failed and rolled back'],
               ),
@@ -327,9 +363,13 @@ server.tool(
           });
           engine.appendTransactionEvent({
             transactionId: txId,
+            sessionId,
             phase: 'rollback',
             reason: 'validate_failed',
-            details: validateResult,
+            details: {
+              validateResult,
+              actionIds: enrichedActions.map((action) => action.actionId),
+            },
           });
           return {
             content: [{
@@ -338,9 +378,11 @@ server.tool(
                 wrapData(
                   {
                     transactionId: txId,
+                    sessionId,
                     rolledBack: true,
                     applyResult,
                     validateResult,
+                    actionIds: enrichedActions.map((action) => action.actionId),
                   },
                   ['runtime validation failed and rolled back'],
                 ),
@@ -354,10 +396,12 @@ server.tool(
 
       engine.appendTransactionEvent({
         transactionId: txId,
+        sessionId,
         phase: 'commit',
         details: {
           applyResult,
           validateResult,
+          actionIds: enrichedActions.map((action) => action.actionId),
         },
       });
 
@@ -367,9 +411,11 @@ server.tool(
           text: JSON.stringify(
             wrapData({
               transactionId: txId,
+              sessionId,
               rolledBack: false,
               applyResult,
               validateResult,
+              actionIds: enrichedActions.map((action) => action.actionId),
             }),
             null,
             2,

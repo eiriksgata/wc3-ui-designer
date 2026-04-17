@@ -1,59 +1,47 @@
 <template>
-    <div v-if="show" class="export-overlay" @click.self="emitClose">
-        <div class="export-dialog export-result-dialog">
-            <h3>导出结果</h3>
-            <div class="export-result-body">
+    <v-dialog
+        :model-value="show"
+        width="620"
+        scrim="rgba(9, 11, 15, 0.72)"
+        @update:model-value="onDialogModelUpdate"
+    >
+        <v-card class="export-result-card" rounded="xl" elevation="12">
+            <v-card-title>导出结果</v-card-title>
+            <v-card-text class="export-result-body">
                 <div v-if="messages.length === 0" class="export-result-item">
                     <span class="export-result-text">导出完成，但没有详细信息。</span>
                 </div>
                 <div v-for="(msg, index) in messages" :key="index" class="export-result-item">
                     <span class="export-result-text">{{ msg }}</span>
                 </div>
-            </div>
-            <div class="export-footer">
-                <button @click="emitClose">关闭</button>
-            </div>
-        </div>
-    </div>
+            </v-card-text>
+            <v-card-actions class="export-footer">
+                <v-btn variant="flat" color="primary" @click="emitClose">关闭</v-btn>
+            </v-card-actions>
+        </v-card>
+    </v-dialog>
 </template>
 
 <script setup lang="ts">
+import type { PropType } from 'vue';
+
 const props = defineProps({
     show: { type: Boolean, default: false },
-    messages: { type: Array, default: () => [] },
+    messages: { type: Array as PropType<string[]>, default: () => [] },
 });
 
 const emit = defineEmits(['close']);
 const emitClose = () => emit('close');
+const onDialogModelUpdate = (value: boolean) => {
+    if (!value) emitClose();
+};
 </script>
 
 <style scoped>
-.export-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(0, 0, 0, 0.6);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 1500;
-}
-
-.export-dialog {
+.export-result-card {
     background: #2d2d30;
     border: 1px solid #3e3e42;
-    border-radius: 8px;
-    width: 420px;
-    max-width: 90vw;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
-    padding: 16px 20px;
-}
-
-.export-result-dialog {
     max-height: 70vh;
-    overflow-y: auto;
 }
 
 .export-result-body {
@@ -82,9 +70,8 @@ const emitClose = () => emit('close');
 }
 
 .export-footer {
-    margin-top: 16px;
     display: flex;
     justify-content: flex-end;
-    gap: 10px;
+    padding: 10px 16px 16px;
 }
 </style>

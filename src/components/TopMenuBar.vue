@@ -1,82 +1,99 @@
 <template>
     <div class="menubar">
-        <div class="menu">
-            <span class="menu-title">文件</span>
-            <div class="menu-dropdown">
-                <button @click="emit('new-project')">新建 (Ctrl+N)</button>
-                <button @click="emit('open-project')">打开 (Ctrl+O)</button>
-                <!-- 添加分隔线和最近项目列表 -->
-                <div v-if="recentProjects.length > 0" class="menu-separator"></div>
-                <div v-if="recentProjects.length > 0" class="recent-projects-section">
-                    <div class="recent-projects-header">最近项目</div>
-                    <button 
-                        v-for="project in recentProjects" 
+        <v-menu location="bottom start" offset="4">
+            <template #activator="{ props: menuProps }">
+                <v-btn v-bind="menuProps" variant="text" density="comfortable" class="menu-activator">文件</v-btn>
+            </template>
+            <v-list density="compact" bg-color="surface" class="menu-list">
+                <v-list-item title="新建 (Ctrl+N)" @click="emit('new-project')" />
+                <v-list-item title="打开 (Ctrl+O)" @click="emit('open-project')" />
+                <v-divider v-if="recentProjects.length > 0" class="my-1" />
+                <v-list-subheader v-if="recentProjects.length > 0">最近项目</v-list-subheader>
+                <template v-if="recentProjects.length > 0">
+                    <v-list-item
+                        v-for="project in recentProjects"
                         :key="project.path"
+                        :title="project.name"
+                        :subtitle="project.path"
                         @click="emit('open-recent-project', project.path)"
-                        class="recent-project-item"
-                        :title="project.path"
-                    >
-                        {{ project.name }}
-                    </button>
-                </div>
-                <button @click="emit('save-project')">保存 (Ctrl+S)</button>
-                <button @click="emit('save-as-project')">另存为 (Ctrl+Shift+S)</button>
-            </div>
-        </div>
-        <div class="menu">
-            <span class="menu-title">编辑</span>
-            <div class="menu-dropdown">
-                <button @click="emit('undo')">撤销 (Ctrl+Z)</button>
-                <button @click="emit('redo')">重做 (Ctrl+Y)</button>
-                <button @click="emit('copy')">复制 (Ctrl+C)</button>
-                <button @click="emit('paste')">粘贴 (Ctrl+V)</button>
-                <button @click="emit('delete-selected')">删除选中 (Del)</button>
-                <button @click="emit('clear-all')">清空全部</button>
-            </div>
-        </div>
-        <div class="menu">
-            <span class="menu-title">排列</span>
-            <div class="menu-dropdown">
-                <button @click="emit('align-left')">左对齐</button>
-                <button @click="emit('align-top')">顶对齐</button>
-                <button @click="emit('align-h-center')">水平居中</button>
-                <button @click="emit('align-v-center')">垂直居中</button>
-                <button @click="emit('align-same-width')">等宽</button>
-                <button @click="emit('align-same-height')">等高</button>
-            </div>
-        </div>
-        <div class="menu">
-            <span class="menu-title">视图</span>
-            <div class="menu-dropdown">
-                <button @click="emit('toggle-grid-snap')">
-                    网格吸附：{{ gridSnapEnabled ? '开' : '关' }}
-                </button>
-            </div>
-        </div>
-        <div class="menu">
-            <span class="menu-title">工具</span>
-            <div class="menu-dropdown">
-                <button @click="emit('import-resources')">导入资源文件夹</button>
-            </div>
-        </div>
-        <div class="menu menu-settings" @click="emit('open-settings')">
-            <span class="menu-title">设置</span>
-        </div>
-        <div class="menu menu-export" @click="emit('open-export')">
-            <span class="menu-title">导出 (F4)</span>
-        </div>
-        <div class="menu menu-help" @click="emit('open-help')">
-            <span class="menu-title">帮助</span>
-        </div>
+                    />
+                </template>
+                <v-divider class="my-1" />
+                <v-list-item title="保存 (Ctrl+S)" @click="emit('save-project')" />
+                <v-list-item title="另存为 (Ctrl+Shift+S)" @click="emit('save-as-project')" />
+            </v-list>
+        </v-menu>
+
+        <v-menu location="bottom start" offset="4">
+            <template #activator="{ props: menuProps }">
+                <v-btn v-bind="menuProps" variant="text" density="comfortable" class="menu-activator">编辑</v-btn>
+            </template>
+            <v-list density="compact" bg-color="surface" class="menu-list">
+                <v-list-item title="撤销 (Ctrl+Z)" @click="emit('undo')" />
+                <v-list-item title="重做 (Ctrl+Y)" @click="emit('redo')" />
+                <v-list-item title="复制 (Ctrl+C)" @click="emit('copy')" />
+                <v-list-item title="粘贴 (Ctrl+V)" @click="emit('paste')" />
+                <v-list-item title="删除选中 (Del)" @click="emit('delete-selected')" />
+                <v-list-item title="清空全部" @click="emit('clear-all')" />
+            </v-list>
+        </v-menu>
+
+        <v-menu location="bottom start" offset="4">
+            <template #activator="{ props: menuProps }">
+                <v-btn v-bind="menuProps" variant="text" density="comfortable" class="menu-activator">排列</v-btn>
+            </template>
+            <v-list density="compact" bg-color="surface" class="menu-list">
+                <v-list-item title="左对齐" @click="emit('align-left')" />
+                <v-list-item title="顶对齐" @click="emit('align-top')" />
+                <v-list-item title="水平居中" @click="emit('align-h-center')" />
+                <v-list-item title="垂直居中" @click="emit('align-v-center')" />
+                <v-list-item title="等宽" @click="emit('align-same-width')" />
+                <v-list-item title="等高" @click="emit('align-same-height')" />
+            </v-list>
+        </v-menu>
+
+        <v-menu location="bottom start" offset="4">
+            <template #activator="{ props: menuProps }">
+                <v-btn v-bind="menuProps" variant="text" density="comfortable" class="menu-activator">视图</v-btn>
+            </template>
+            <v-list density="compact" bg-color="surface" class="menu-list">
+                <v-list-item :title="`网格吸附：${gridSnapEnabled ? '开' : '关'}`" @click="emit('toggle-grid-snap')" />
+            </v-list>
+        </v-menu>
+
+        <v-menu location="bottom start" offset="4">
+            <template #activator="{ props: menuProps }">
+                <v-btn v-bind="menuProps" variant="text" density="comfortable" class="menu-activator">工具</v-btn>
+            </template>
+            <v-list density="compact" bg-color="surface" class="menu-list">
+                <v-list-item title="导入资源文件夹" @click="emit('import-resources')" />
+            </v-list>
+        </v-menu>
+
+        <v-btn variant="text" density="comfortable" class="menu-activator" @click="emit('open-settings')">设置</v-btn>
+        <v-btn variant="text" density="comfortable" class="menu-activator" @click="emit('open-export')">导出 (F4)</v-btn>
+        <v-btn variant="text" density="comfortable" class="menu-activator" @click="emit('open-help')">帮助</v-btn>
+        <v-btn variant="text" density="comfortable" class="menu-activator" @click="emit('open-mcp-guide')">MCP配置（VS Code/Copilot）</v-btn>
+        <v-btn variant="text" density="comfortable" class="menu-activator" @click="emit('toggle-theme')">
+            主题：{{ themeName === 'appDark' ? '深色' : '浅色' }}
+        </v-btn>
         <span class="menubar-msg" v-if="message">{{ message }}</span>
     </div>
 </template>
 
 <script setup lang="ts">
+import type { PropType } from 'vue';
+
+interface RecentProject {
+    name: string;
+    path: string;
+}
+
 const props = defineProps({
     gridSnapEnabled: { type: Boolean, default: false },
     message: { type: String, default: '' },
-    recentProjects: { type: Array, default: () => [] },
+    recentProjects: { type: Array as PropType<RecentProject[]>, default: () => [] },
+    themeName: { type: String, default: 'appDark' },
 });
 
 const emit = defineEmits([
@@ -102,97 +119,38 @@ const emit = defineEmits([
     'open-settings',
     'open-export',
     'open-help',
+    'open-mcp-guide',
+    'toggle-theme',
 ]);
 </script>
 
 <style scoped>
 .menubar {
-    padding: 4px 10px;
-    border-bottom: 1px solid #333;
-    background: #202020;
+    padding: 4px 8px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    background: linear-gradient(180deg, #242831 0%, #20242c 100%);
     display: flex;
-    gap: 12px;
+    gap: 4px;
     align-items: center;
 }
 
-.menu {
-    position: relative;
-    color: #eee;
+.menu-activator {
+    min-width: auto;
     font-size: 13px;
-    cursor: default;
-    user-select: none;
+    text-transform: none;
+    letter-spacing: 0;
+    color: #edf1fa;
+    border-radius: 6px;
 }
 
-.menu-title {
-    padding: 2px 6px;
-    border-radius: 3px;
-}
-
-.menu-title:hover {
-    background: #333;
-}
-
-.menu-dropdown {
-    position: absolute;
-    top: 100%;
-    left: 0;
-    background: #2d2d30;
-    border: 1px solid #3e3e42;
-    border-radius: 3px;
-    min-width: 140px;
-    padding: 4px 0;
-    display: none;
-    flex-direction: column;
-    z-index: 50;
-}
-
-.menu:hover .menu-dropdown {
-    display: flex;
-}
-
-.menu-dropdown button {
-    width: 100%;
-    justify-content: flex-start;
-    padding: 4px 12px;
-    border-radius: 0;
-    border: none;
-    background: transparent;
-}
-
-.menu-dropdown button:hover {
-    background: #3a3a3d;
+.menu-list {
+    min-width: 220px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .menubar-msg {
     margin-left: auto;
     font-size: 12px;
-    color: #ccc;
-}
-
-.menu-separator {
-    height: 1px;
-    background: #3e3e42;
-    margin: 4px 0;
-}
-
-.recent-projects-section {
-    padding: 0;
-}
-
-.recent-projects-header {
-    padding: 4px 12px;
-    font-size: 11px;
-    color: #888;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-}
-
-.recent-project-item {
-    padding: 4px 12px 4px 24px; /* 左侧缩进 */
-    font-size: 12px;
-    text-overflow: ellipsis;
-    overflow: hidden;
-    white-space: nowrap;
-    max-width: 300px;
+    color: #b8c5da;
 }
 </style>

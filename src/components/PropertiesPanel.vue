@@ -3,132 +3,244 @@
         <h3>属性面板</h3>
         <!-- 单选：显示完整属性 -->
         <div v-if="selectedWidget && selectedIds.length === 1">
-            <div class="prop-tabs">
-                <button v-for="tab in propertyTabs" :key="tab.id"
-                    :class="['prop-tab', { active: activePropertyTab === tab.id }]"
-                    @click="$emit('update:activePropertyTab', tab.id)">
+            <v-tabs
+                :model-value="activePropertyTab"
+                density="compact"
+                color="primary"
+                class="prop-tabs-vuetify"
+                @update:model-value="$emit('update:activePropertyTab', $event)"
+            >
+                <v-tab
+                    v-for="tab in propertyTabs"
+                    :key="tab.id"
+                    :value="tab.id"
+                    class="prop-tab-vuetify"
+                >
                     {{ tab.label }}
-                </button>
-            </div>
+                </v-tab>
+            </v-tabs>
 
             <!-- 属性页 -->
             <div v-if="activePropertyTab === 'props'">
                 <h4 class="prop-section-title">基础信息</h4>
                 <label for="widget-name">名字（导出到 Lua 使用）</label>
-                <input id="widget-name" name="widget-name" type="text" v-model="selectedWidget.name"
-                    title="控件的名称，用于导出到 Lua" />
+                <v-text-field
+                    id="widget-name"
+                    v-model="selectedWidget.name"
+                    density="compact"
+                    variant="outlined"
+                    hide-details
+                    title="控件的名称，用于导出到 Lua"
+                />
 
                 <label for="widget-type">类型</label>
-                <select id="widget-type" name="widget-type" v-model="selectedWidget.type" title="控件类型">
-                    <option v-for="t in allWidgetTypes" :key="t.id" :value="t.id">
-                        {{ t.label }} ({{ t.id }})
-                    </option>
-                </select>
+                <v-select
+                    id="widget-type"
+                    v-model="selectedWidget.type"
+                    :items="widgetTypeItems"
+                    item-title="title"
+                    item-value="value"
+                    density="compact"
+                    variant="outlined"
+                    hide-details
+                    title="控件类型"
+                />
 
                 <!-- 文本内容 & 文本属性：仅文本基础类型控件显示（Panel / Button 不需要 text） -->
                 <template v-if="baseTypeOf(selectedWidget.type) === 'text'">
                     <label for="widget-text">文本</label>
-                    <textarea id="widget-text" name="widget-text" v-model="selectedWidget.text"
-                        title="控件显示的文本内容" placeholder="输入文本内容"></textarea>
+                    <v-textarea
+                        id="widget-text"
+                        v-model="selectedWidget.text"
+                        title="控件显示的文本内容"
+                        placeholder="输入文本内容"
+                        variant="outlined"
+                        rows="3"
+                        auto-grow
+                        hide-details
+                    />
 
                     <!-- 文本额外属性 -->
                     <h4 class="prop-section-title">文本属性</h4>
                     <div class="prop-group prop-grid-2">
                         <label for="widget-font">字体</label>
-                        <input id="widget-font" type="text" v-model="selectedWidget.font"
-                            placeholder="例如 DENG.ttf 或字体名" />
+                        <v-text-field
+                            id="widget-font"
+                            v-model="selectedWidget.font"
+                            placeholder="例如 DENG.ttf 或字体名"
+                            density="compact"
+                            variant="outlined"
+                            hide-details
+                        />
 
                         <label for="widget-font-size">字体大小</label>
-                        <input id="widget-font-size" type="number" v-model.number="selectedWidget.fontSize" min="1" />
+                        <v-text-field
+                            id="widget-font-size"
+                            type="number"
+                            v-model.number="selectedWidget.fontSize"
+                            min="1"
+                            density="compact"
+                            variant="outlined"
+                            hide-details
+                        />
 
                         <label for="widget-outline-size">描边大小</label>
-                        <input id="widget-outline-size" type="number" v-model.number="selectedWidget.outlineSize"
-                            min="0" />
+                        <v-text-field
+                            id="widget-outline-size"
+                            type="number"
+                            v-model.number="selectedWidget.outlineSize"
+                            min="0"
+                            density="compact"
+                            variant="outlined"
+                            hide-details
+                        />
 
                         <label for="widget-text-align">对齐方式</label>
-                        <select id="widget-text-align" v-model="selectedWidget.textAlign">
-                            <option value="top_left">左上</option>
-                            <option value="top">顶部</option>
-                            <option value="top_right">右上</option>
-                            <option value="left">左侧</option>
-                            <option value="center">中心</option>
-                            <option value="right">右侧</option>
-                            <option value="bottom_left">左下</option>
-                            <option value="bottom">底部</option>
-                            <option value="bottom_right">右下</option>
-                        </select>
+                        <v-select
+                            id="widget-text-align"
+                            v-model="selectedWidget.textAlign"
+                            :items="textAlignItems"
+                            item-title="title"
+                            item-value="value"
+                            density="compact"
+                            variant="outlined"
+                            hide-details
+                        />
                     </div>
                 </template>
 
                 <!-- 通用基础属性 -->
                 <h4 class="prop-section-title">通用属性</h4>
-                <div class="prop-group prop-inline">
-                    <label>
-                        <input type="checkbox" v-model="selectedWidget.enable" />
-                        可交互
-                    </label>
-                    <label>
-                        <input type="checkbox" v-model="selectedWidget.visible" />
-                        可见
-                    </label>
-                    <label>
-                        <input type="checkbox" v-model="selectedWidget.locked" />
-                        锁定
-                    </label>
+                <div class="prop-group prop-inline prop-inline-checks">
+                    <v-checkbox
+                        v-model="selectedWidget.enable"
+                        label="可交互"
+                        density="compact"
+                        hide-details
+                        color="primary"
+                    />
+                    <v-checkbox
+                        v-model="selectedWidget.visible"
+                        label="可见"
+                        density="compact"
+                        hide-details
+                        color="primary"
+                    />
+                    <v-checkbox
+                        v-model="selectedWidget.locked"
+                        label="锁定"
+                        density="compact"
+                        hide-details
+                        color="primary"
+                    />
                 </div>
 
                 <!-- 图片 / 按钮属性 -->
                 <template v-if="supportsImage(selectedWidget.type)">
                     <h4 class="prop-section-title">图片</h4>
                     <label for="widget-image-select">图片资源（Frame.image）</label>
-                    <select id="widget-image-select" name="widget-image-select" v-model="selectedWidget.image"
-                        title="选择图片资源">
-                        <option value="">无</option>
-                        <option v-for="res in imageResources" :key="res.value" :value="res.value">
-                            {{ res.label }}（{{ res.value }}）
-                        </option>
-                    </select>
+                    <v-select
+                        id="widget-image-select"
+                        v-model="selectedWidget.image"
+                        :items="imageResourceItems"
+                        item-title="title"
+                        item-value="value"
+                        density="compact"
+                        variant="outlined"
+                        hide-details
+                        title="选择图片资源"
+                    />
                     <label for="widget-image-custom">自定义路径（可直接编辑）</label>
-                    <input id="widget-image-custom" name="widget-image-custom" type="text"
-                        v-model="selectedWidget.image" title="自定义图片路径" placeholder="输入图片路径" />
+                    <v-text-field
+                        id="widget-image-custom"
+                        v-model="selectedWidget.image"
+                        title="自定义图片路径"
+                        placeholder="输入图片路径"
+                        density="compact"
+                        variant="outlined"
+                        hide-details
+                    />
                 </template>
 
                 <!-- Button 额外属性 -->
                 <template v-if="baseTypeOf(selectedWidget.type) === 'button'">
                     <h4 class="prop-subtitle">按钮图片</h4>
                     <label for="widget-btn-image-click">点击图片</label>
-                    <input id="widget-btn-image-click" type="text" v-model="selectedWidget.clickImage"
-                        placeholder="点击状态图片路径" />
+                    <v-text-field
+                        id="widget-btn-image-click"
+                        v-model="selectedWidget.clickImage"
+                        placeholder="点击状态图片路径"
+                        density="compact"
+                        variant="outlined"
+                        hide-details
+                    />
 
                     <label for="widget-btn-image-hover">悬浮图片</label>
-                    <input id="widget-btn-image-hover" type="text" v-model="selectedWidget.hoverImage"
-                        placeholder="鼠标悬浮图片路径" />
+                    <v-text-field
+                        id="widget-btn-image-hover"
+                        v-model="selectedWidget.hoverImage"
+                        placeholder="鼠标悬浮图片路径"
+                        density="compact"
+                        variant="outlined"
+                        hide-details
+                    />
 
                     <div class="prop-group">
-                        <label>
-                            <input type="checkbox" v-model="selectedWidget.draggable" />
-                            是否可以拖动
-                        </label>
+                        <v-checkbox
+                            v-model="selectedWidget.draggable"
+                            label="是否可以拖动"
+                            density="compact"
+                            hide-details
+                            color="primary"
+                        />
                     </div>
                 </template>
 
                 <h4 class="prop-section-title">布局</h4>
                 <div class="prop-group prop-grid-2">
                     <label for="widget-x">位置 X</label>
-                    <input id="widget-x" name="widget-x" type="number" v-model.number="selectedWidget.x"
-                        title="控件在画布上的 X 坐标" />
+                    <v-text-field
+                        id="widget-x"
+                        type="number"
+                        v-model.number="selectedWidget.x"
+                        density="compact"
+                        variant="outlined"
+                        hide-details
+                        title="控件在画布上的 X 坐标"
+                    />
 
                     <label for="widget-y">位置 Y</label>
-                    <input id="widget-y" name="widget-y" type="number" v-model.number="selectedWidget.y"
-                        title="控件在画布上的 Y 坐标" />
+                    <v-text-field
+                        id="widget-y"
+                        type="number"
+                        v-model.number="selectedWidget.y"
+                        density="compact"
+                        variant="outlined"
+                        hide-details
+                        title="控件在画布上的 Y 坐标"
+                    />
 
                     <label for="widget-w">宽度</label>
-                    <input id="widget-w" name="widget-w" type="number" v-model.number="selectedWidget.w"
-                        title="控件的宽度" />
+                    <v-text-field
+                        id="widget-w"
+                        type="number"
+                        v-model.number="selectedWidget.w"
+                        density="compact"
+                        variant="outlined"
+                        hide-details
+                        title="控件的宽度"
+                    />
 
                     <label for="widget-h">高度</label>
-                    <input id="widget-h" name="widget-h" type="number" v-model.number="selectedWidget.h"
-                        title="控件的高度" />
+                    <v-text-field
+                        id="widget-h"
+                        type="number"
+                        v-model.number="selectedWidget.h"
+                        density="compact"
+                        variant="outlined"
+                        hide-details
+                        title="控件的高度"
+                    />
                 </div>
 
                 <!-- 父节点 -->
@@ -142,14 +254,26 @@
 
                 <template v-if="selectedWidget.type === 'checkbox'">
                     <label for="widget-checked">默认选中</label>
-                    <input id="widget-checked" name="widget-checked" type="checkbox" v-model="selectedWidget.checked"
-                        title="复选框的默认选中状态" />
+                    <v-checkbox
+                        id="widget-checked"
+                        v-model="selectedWidget.checked"
+                        density="compact"
+                        hide-details
+                        color="primary"
+                    />
                 </template>
 
                 <template v-if="selectedWidget.type === 'combobox'">
                     <label for="widget-selected-index">当前选项索引（0/1/2...）</label>
-                    <input id="widget-selected-index" name="widget-selected-index" type="number"
-                        v-model.number="selectedWidget.selectedIndex" title="下拉框当前选中的选项索引" />
+                    <v-text-field
+                        id="widget-selected-index"
+                        type="number"
+                        v-model.number="selectedWidget.selectedIndex"
+                        density="compact"
+                        variant="outlined"
+                        hide-details
+                        title="下拉框当前选中的选项索引"
+                    />
                 </template>
             </div>
 
@@ -176,94 +300,118 @@
                             <h5 class="prop-subtitle">基础设置</h5>
                             <div class="prop-group prop-grid-2">
                                 <label>名称</label>
-                                <input class="animation-name" type="text" v-model="anim.name" placeholder="动画名称" />
+                                <v-text-field
+                                    class="animation-name"
+                                    v-model="anim.name"
+                                    placeholder="动画名称"
+                                    density="compact"
+                                    variant="outlined"
+                                    hide-details
+                                />
 
                                 <label>类型</label>
-                                <select v-model="anim.type" class="animation-type">
-                                    <option value="move">位移动画</option>
-                                    <option value="scale">缩放动画</option>
-                                    <option value="alpha">透明度动画</option>
-                                </select>
+                                <v-select
+                                    v-model="anim.type"
+                                    class="animation-type"
+                                    :items="animationTypeItems"
+                                    item-title="title"
+                                    item-value="value"
+                                    density="compact"
+                                    variant="outlined"
+                                    hide-details
+                                />
                             </div>
 
                             <h5 class="prop-subtitle">播放参数（单位：帧）</h5>
                             <div class="prop-group prop-grid-2">
                                 <label>时长 (帧)</label>
-                                <input type="number" min="1" step="1" v-model.number="anim.duration"
-                                    class="animation-number" title="持续时间（帧数）" />
+                                <v-text-field
+                                    type="number"
+                                    min="1"
+                                    step="1"
+                                    v-model.number="anim.duration"
+                                    class="animation-number"
+                                    density="compact"
+                                    variant="outlined"
+                                    hide-details
+                                    title="持续时间（帧数）"
+                                />
 
                                 <label>延迟 (帧)</label>
-                                <input type="number" min="0" step="1" v-model.number="anim.delay"
-                                    class="animation-number" title="延迟时间（帧数）" />
+                                <v-text-field
+                                    type="number"
+                                    min="0"
+                                    step="1"
+                                    v-model.number="anim.delay"
+                                    class="animation-number"
+                                    density="compact"
+                                    variant="outlined"
+                                    hide-details
+                                    title="延迟时间（帧数）"
+                                />
                             </div>
 
                             <!-- 仅位移动画时显示目标位置 -->
                             <div v-if="anim.type === 'move'" class="prop-group prop-grid-2">
                                 <label>目标 X</label>
-                                <input type="number" v-model.number="anim.params.toX" placeholder="留空=使用当前位置" />
+                                <v-text-field
+                                    type="number"
+                                    v-model.number="anim.params.toX"
+                                    placeholder="留空=使用当前位置"
+                                    density="compact"
+                                    variant="outlined"
+                                    hide-details
+                                />
                                 <label>目标 Y</label>
-                                <input type="number" v-model.number="anim.params.toY" placeholder="留空=使用当前位置" />
+                                <v-text-field
+                                    type="number"
+                                    v-model.number="anim.params.toY"
+                                    placeholder="留空=使用当前位置"
+                                    density="compact"
+                                    variant="outlined"
+                                    hide-details
+                                />
                             </div>
 
                             <!-- 缓动类型 -->
                             <h5 class="prop-subtitle">缓动类型</h5>
                             <div class="prop-group">
-                                <select v-model.number="anim.params.tweenType">
-                                    <option :value="0">线性</option>
-                                    <option :value="1">正弦出</option>
-                                    <option :value="2">正弦入</option>
-                                    <option :value="3">正弦出入</option>
-                                    <option :value="4">二元入</option>
-                                    <option :value="5">二元出</option>
-                                    <option :value="6">二元入出</option>
-                                    <option :value="7">三元入</option>
-                                    <option :value="8">三元出</option>
-                                    <option :value="9">三元入出</option>
-                                    <option :value="10">四元入</option>
-                                    <option :value="11">四元出</option>
-                                    <option :value="12">四元出入</option>
-                                    <option :value="13">五元入</option>
-                                    <option :value="14">五元出</option>
-                                    <option :value="15">五元入出</option>
-                                    <option :value="16">指数入</option>
-                                    <option :value="17">指数出</option>
-                                    <option :value="18">指数入出</option>
-                                    <option :value="19">圆形入</option>
-                                    <option :value="20">圆形出</option>
-                                    <option :value="21">圆形入出</option>
-                                    <option :value="22">弹性入</option>
-                                    <option :value="23">弹性出</option>
-                                    <option :value="24">弹性入出</option>
-                                    <option :value="25">后退入</option>
-                                    <option :value="26">后退出</option>
-                                    <option :value="27">后退入出</option>
-                                    <option :value="28">弹跳入</option>
-                                    <option :value="29">弹跳出</option>
-                                    <option :value="30">弹跳入出</option>
-                                </select>
+                                <v-select
+                                    v-model.number="anim.params.tweenType"
+                                    :items="tweenTypeItems"
+                                    item-title="title"
+                                    item-value="value"
+                                    density="compact"
+                                    variant="outlined"
+                                    hide-details
+                                />
                             </div>
 
                             <div class="prop-group prop-inline">
-                                <label class="animation-loop">
-                                    <input type="checkbox" v-model="anim.loop" />
-                                    循环播放
-                                </label>
+                                <v-checkbox
+                                    v-model="anim.loop"
+                                    label="循环播放"
+                                    density="compact"
+                                    hide-details
+                                    color="primary"
+                                    class="animation-loop-check"
+                                />
                             </div>
 
                             <div class="prop-group prop-inline">
-                                <button class="animation-btn" @click.stop="$emit('previewAnimation', anim.id)">
+                                <v-btn size="small" variant="tonal" class="animation-btn" @click.stop="$emit('previewAnimation', anim.id)">
                                     预览
-                                </button>
-                                <button class="animation-btn" @click.stop="$emit('duplicateAnimation', anim.id)">
+                                </v-btn>
+                                <v-btn size="small" variant="tonal" class="animation-btn" @click.stop="$emit('duplicateAnimation', anim.id)">
                                     复制
-                                </button>
-                                <button class="animation-btn danger" @click.stop="$emit('removeAnimation', anim.id)">
+                                </v-btn>
+                                <v-btn size="small" variant="flat" color="error" class="animation-btn danger" @click.stop="$emit('removeAnimation', anim.id)">
                                     删除
-                                </button>
+                                </v-btn>
                             </div>
                         </div>
                     </div>
-                    <button class="animation-add-btn" @click="$emit('addAnimationForSelected')">添加动画</button>
+                    <v-btn size="small" variant="flat" color="primary" class="animation-add-btn" @click="$emit('addAnimationForSelected')">添加动画</v-btn>
                 </div>
             </div>
         </div>
@@ -275,42 +423,93 @@
             <div class="prop-group">
                 <label>批量移动 (ΔX / ΔY)</label>
                 <div class="prop-inline">
-                    <input type="number" v-model.number="batchMove.dx" placeholder="ΔX" title="所有选中控件整体平移的 X 偏移量" />
-                    <input type="number" v-model.number="batchMove.dy" placeholder="ΔY" title="所有选中控件整体平移的 Y 偏移量" />
-                    <button @click="$emit('applyBatchMove')">应用</button>
+                    <v-text-field
+                        type="number"
+                        v-model.number="batchMove.dx"
+                        placeholder="ΔX"
+                        density="compact"
+                        variant="outlined"
+                        hide-details
+                        title="所有选中控件整体平移的 X 偏移量"
+                    />
+                    <v-text-field
+                        type="number"
+                        v-model.number="batchMove.dy"
+                        placeholder="ΔY"
+                        density="compact"
+                        variant="outlined"
+                        hide-details
+                        title="所有选中控件整体平移的 Y 偏移量"
+                    />
+                    <v-btn size="small" variant="tonal" color="primary" @click="$emit('applyBatchMove')">应用</v-btn>
                 </div>
             </div>
 
             <div class="prop-group">
                 <label>统一宽高</label>
                 <div class="prop-inline">
-                    <input type="number" v-model.number="batchSize.w" placeholder="宽" title="将所有选中控件的宽度统一为该值（留空则不修改）" />
-                    <input type="number" v-model.number="batchSize.h" placeholder="高" title="将所有选中控件的高度统一为该值（留空则不修改）" />
-                    <button @click="$emit('applyBatchSize')">应用</button>
+                    <v-text-field
+                        type="number"
+                        v-model.number="batchSize.w"
+                        placeholder="宽"
+                        density="compact"
+                        variant="outlined"
+                        hide-details
+                        title="将所有选中控件的宽度统一为该值（留空则不修改）"
+                    />
+                    <v-text-field
+                        type="number"
+                        v-model.number="batchSize.h"
+                        placeholder="高"
+                        density="compact"
+                        variant="outlined"
+                        hide-details
+                        title="将所有选中控件的高度统一为该值（留空则不修改）"
+                    />
+                    <v-btn size="small" variant="tonal" color="primary" @click="$emit('applyBatchSize')">应用</v-btn>
                 </div>
             </div>
 
             <div class="prop-group">
                 <label for="batch-text">批量文本</label>
-                <textarea id="batch-text" name="batch-text" :value="batchText"
-                    @input="$emit('update:batchText', $event.target.value)" placeholder="输入要统一设置的文本，留空表示不修改"
-                    title="仅对支持文本的控件（标签 / 按钮 / 输入框等）生效"></textarea>
-                <button @click="$emit('applyBatchText')">应用到所有选中控件</button>
+                <v-textarea
+                    id="batch-text"
+                    :model-value="batchText"
+                    @update:model-value="$emit('update:batchText', $event)"
+                    placeholder="输入要统一设置的文本，留空表示不修改"
+                    title="仅对支持文本的控件（标签 / 按钮 / 输入框等）生效"
+                    variant="outlined"
+                    rows="3"
+                    auto-grow
+                    hide-details
+                />
+                <v-btn size="small" variant="tonal" color="primary" @click="$emit('applyBatchText')">应用到所有选中控件</v-btn>
             </div>
 
             <div class="prop-group">
                 <label>批量图片资源</label>
-                <select :value="batchImage" @change="$emit('update:batchImage', $event.target.value)"
-                    title="选择一张图片应用到所有支持图片的控件">
-                    <option value="">不修改</option>
-                    <option v-for="res in imageResources" :key="res.value" :value="res.value">
-                        {{ res.label }}（{{ res.value }}）
-                    </option>
-                </select>
+                <v-select
+                    :model-value="batchImage"
+                    @update:model-value="$emit('update:batchImage', $event)"
+                    :items="imageResourceBatchItems"
+                    item-title="title"
+                    item-value="value"
+                    density="compact"
+                    variant="outlined"
+                    hide-details
+                    title="选择一张图片应用到所有支持图片的控件"
+                />
                 <label for="batch-image-custom">自定义路径</label>
-                <input id="batch-image-custom" type="text" :value="batchImage"
-                    @input="$emit('update:batchImage', $event.target.value)" placeholder="填写自定义图片路径（留空表示不修改）" />
-                <button @click="$emit('applyBatchImage')">应用到所有选中控件</button>
+                <v-text-field
+                    id="batch-image-custom"
+                    :model-value="batchImage"
+                    @update:model-value="$emit('update:batchImage', $event)"
+                    placeholder="填写自定义图片路径（留空表示不修改）"
+                    density="compact"
+                    variant="outlined"
+                    hide-details
+                />
+                <v-btn size="small" variant="tonal" color="primary" @click="$emit('applyBatchImage')">应用到所有选中控件</v-btn>
             </div>
 
             <div class="prop-group hint-text">
@@ -357,6 +556,8 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue';
+
 const props = defineProps({
     rightWidth: { type: Number, default: 260 },
     selectedWidget: { type: Object, default: null },
@@ -390,6 +591,81 @@ defineEmits([
     'update:batchText',
     'update:batchImage',
 ]);
+
+const widgetTypeItems = computed(() =>
+    props.allWidgetTypes.map((t) => ({
+        title: `${t.label} (${t.id})`,
+        value: t.id,
+    })),
+);
+
+const textAlignItems = [
+    { title: '左上', value: 'top_left' },
+    { title: '顶部', value: 'top' },
+    { title: '右上', value: 'top_right' },
+    { title: '左侧', value: 'left' },
+    { title: '中心', value: 'center' },
+    { title: '右侧', value: 'right' },
+    { title: '左下', value: 'bottom_left' },
+    { title: '底部', value: 'bottom' },
+    { title: '右下', value: 'bottom_right' },
+];
+
+const imageResourceItems = computed(() => [
+    { title: '无', value: '' },
+    ...props.imageResources.map((res) => ({
+        title: `${res.label}（${res.value}）`,
+        value: res.value,
+    })),
+]);
+
+const imageResourceBatchItems = computed(() => [
+    { title: '不修改', value: '' },
+    ...props.imageResources.map((res) => ({
+        title: `${res.label}（${res.value}）`,
+        value: res.value,
+    })),
+]);
+
+const animationTypeItems = [
+    { title: '位移动画', value: 'move' },
+    { title: '缩放动画', value: 'scale' },
+    { title: '透明度动画', value: 'alpha' },
+];
+
+const tweenTypeItems = [
+    { title: '线性', value: 0 },
+    { title: '正弦出', value: 1 },
+    { title: '正弦入', value: 2 },
+    { title: '正弦出入', value: 3 },
+    { title: '二元入', value: 4 },
+    { title: '二元出', value: 5 },
+    { title: '二元入出', value: 6 },
+    { title: '三元入', value: 7 },
+    { title: '三元出', value: 8 },
+    { title: '三元入出', value: 9 },
+    { title: '四元入', value: 10 },
+    { title: '四元出', value: 11 },
+    { title: '四元出入', value: 12 },
+    { title: '五元入', value: 13 },
+    { title: '五元出', value: 14 },
+    { title: '五元入出', value: 15 },
+    { title: '指数入', value: 16 },
+    { title: '指数出', value: 17 },
+    { title: '指数入出', value: 18 },
+    { title: '圆形入', value: 19 },
+    { title: '圆形出', value: 20 },
+    { title: '圆形入出', value: 21 },
+    { title: '弹性入', value: 22 },
+    { title: '弹性出', value: 23 },
+    { title: '弹性入出', value: 24 },
+    { title: '后退入', value: 25 },
+    { title: '后退出', value: 26 },
+    { title: '后退入出', value: 27 },
+    { title: '弹跳入', value: 28 },
+    { title: '弹跳出', value: 29 },
+    { title: '弹跳入出', value: 30 },
+];
 </script>
 
 <style scoped>
@@ -406,6 +682,29 @@ defineEmits([
 .right textarea,
 .right select {
     user-select: text;
+}
+
+.prop-tabs-vuetify {
+    margin-bottom: 10px;
+}
+
+.prop-tab-vuetify {
+    text-transform: none;
+    letter-spacing: 0;
+    min-width: 52px;
+}
+
+.prop-inline-checks {
+    gap: 12px;
+    align-items: center;
+}
+
+.prop-inline-checks :deep(.v-selection-control) {
+    min-height: 28px;
+}
+
+.animation-loop-check {
+    margin-left: -8px;
 }
 
 .empty-tip {
