@@ -92,6 +92,10 @@ if (!luaOutput.includes('Frame.Panel')) {
   throw new Error('lua export content invalid');
 }
 
+if (!exported?.widgets?.tree || !Array.isArray(exported.widgets.tree)) {
+  throw new Error('widget tree should be exported');
+}
+
 console.log('MCP E2E check passed');
 console.log(`projectPath=${projectPath}`);
 console.log(`exportPath=${exportPath}`);

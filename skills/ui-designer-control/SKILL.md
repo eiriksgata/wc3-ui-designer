@@ -13,6 +13,13 @@
 5. `ui_export_code`
 6. `ui_save_project`
 
+运行态控制（可选，UI 进程已打开时）：
+
+1. `ui_runtime_call(method=listExportPlugins)`
+2. `ui_runtime_call(method=batchApply)`
+3. `ui_runtime_call(method=validate)`
+4. `ui_runtime_call(method=exportWithPlugin)`
+
 ## Action DSL
 
 ```json
@@ -80,3 +87,4 @@
 
 - 通过 `ui_get_audit_trail` 拉取最近动作日志。
 - 建议按 `sessionId` 聚合，定位同一次需求执行链。
+- 若使用运行态桥接，故障排查优先检查 `mcp-runtime` 队列目录是否有堆积请求。

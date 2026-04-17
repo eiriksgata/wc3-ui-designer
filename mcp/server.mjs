@@ -1,10 +1,13 @@
 #!/usr/bin/env node
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import fs from 'node:fs/promises';
+import path from 'node:path';
 import { z } from 'zod';
 import { ProjectEngine } from './project-engine.mjs';
 
 const engine = new ProjectEngine();
+const runtimeBridgeDir = path.resolve(process.cwd(), 'mcp-runtime');
 
 const protocolInfo = {
   mcpProtocolVersion: '1.0.0',
@@ -26,6 +29,52 @@ const wrapData = (data, diagnostics = []) => ({
   nextHints: [],
   protocol: protocolInfo,
 });
+
+const waitForFile = async (filePath, timeoutMs = 15000) => {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    try {
+      await fs.access(filePath);
+      return true;
+    } catch {
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    }
+  }
+  return false;
+};
+
+const callRuntimeBridge = async ({ method, params = {}, timeoutMs = 15000 }) => {
+  const requestId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const requestPath = path.join(runtimeBridgeDir, `request_${requestId}.json`);
+  const responsePath = path.join(runtimeBridgeDir, `response_${requestId}.json`);
+  await fs.mkdir(runtimeBridgeDir, { recursive: true });
+  await fs.writeFile(
+    requestPath,
+    JSON.stringify(
+      {
+        requestId,
+        method,
+        params,
+        createdAt: new Date().toISOString(),
+      },
+      null,
+      2,
+    ),
+    'utf8',
+  );
+
+  const ok = await waitForFile(responsePath, timeoutMs);
+  if (!ok) {
+    throw new Error(`runtime bridge timeout: ${method}`);
+  }
+  const raw = await fs.readFile(responsePath, 'utf8');
+  await fs.unlink(responsePath).catch(() => {});
+  const response = JSON.parse(raw);
+  if (!response.ok) {
+    throw new Error(response.error || `runtime bridge call failed: ${method}`);
+  }
+  return response.data;
+};
 
 const parseActionHints = (actions = []) => {
   const dangerous = actions.some((action) => action.type === 'clearProject' || action.type === 'deleteWidget');
@@ -168,6 +217,33 @@ server.tool(
     try {
       const data = engine.getAuditTrail(limit || 100);
       return { content: [{ type: 'text', text: JSON.stringify(wrapData({ events: data }), null, 2) }] };
+    } catch (error) {
+      return { content: [{ type: 'text', text: JSON.stringify(normalizeError(error), null, 2) }] };
+    }
+  },
+);
+
+server.tool(
+  'ui_runtime_call',
+  '调用运行中 UI 进程的 ActionApi（通过本地桥接队列）',
+  {
+    method: z.enum([
+      'batchApply',
+      'getProjectSnapshot',
+      'validate',
+      'exportWithPlugin',
+      'exportStructuredJson',
+      'listExportPlugins',
+      'undo',
+      'redo',
+    ]),
+    params: z.record(z.any()).optional(),
+    timeoutMs: z.number().int().min(1000).max(120000).optional(),
+  },
+  async ({ method, params, timeoutMs }) => {
+    try {
+      const data = await callRuntimeBridge({ method, params: params || {}, timeoutMs: timeoutMs || 15000 });
+      return { content: [{ type: 'text', text: JSON.stringify(wrapData({ method, data }), null, 2) }] };
     } catch (error) {
       return { content: [{ type: 'text', text: JSON.stringify(normalizeError(error), null, 2) }] };
     }

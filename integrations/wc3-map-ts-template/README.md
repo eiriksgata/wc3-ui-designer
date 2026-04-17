@@ -19,6 +19,16 @@
    - `node <ui-designer>/integrations/wc3-map-ts-template/bridge.mjs tmp/ui-structured.json src/generated/ui-designer.ts`
 5. 模板工程引用 `src/generated/ui-designer.ts` 进入后续代码生成链。
 
+## 运行态桥接（可选）
+
+当 UI Designer 桌面应用正在运行时，可用 `ui_runtime_call` 直接驱动运行态 `ActionApi`：
+
+- `ui_runtime_call(method=batchApply, params={ actions: [...] })`
+- `ui_runtime_call(method=validate)`
+- `ui_runtime_call(method=exportWithPlugin, params={ pluginId: "lua-export" })`
+
+该桥接使用本地目录 `mcp-runtime` 作为请求/响应队列。
+
 ## 约束建议
 
 - 先校验再导出。

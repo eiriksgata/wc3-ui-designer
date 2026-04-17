@@ -283,6 +283,7 @@ import { useKeyboard } from './composables/useKeyboard';
 import { useCanvasInteraction } from './composables/useCanvasInteraction';
 import { useAnimations } from './composables/useAnimations';
 import { useActionApi } from './composables/useActionApi';
+import { useMcpRuntimeBridge } from './composables/useMcpRuntimeBridge';
 
 // 使用组合式函数
 const { showSettings, settings, saveSettings, resetSettings, loadSettings } = useSettings();
@@ -1009,6 +1010,11 @@ const actionApi = useActionApi({
 if (typeof window !== 'undefined') {
   (window as any).__uiDesignerActionApi = actionApi;
 }
+
+useMcpRuntimeBridge({
+  api: actionApi,
+  message,
+});
 
 // 使用批量编辑 composable
 const batchEdit = useBatchEdit(widgetsList, selectedIds, pushHistory, moveWidgetWithChildren, supportsImage);
