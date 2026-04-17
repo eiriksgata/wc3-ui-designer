@@ -83,12 +83,12 @@ const onResourceMouseLeave = (e) => emit('hover-leave', e);
 <style scoped>
 .resources-panel {
     flex: 0 0 auto;
-    border-top: 1px solid #333;
-    background: #202225;
-    padding: 6px 10px;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    background: linear-gradient(180deg, #232730 0%, #1f232c 100%);
+    padding: 8px 10px;
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 8px;
     position: relative;
 }
 
@@ -97,34 +97,36 @@ const onResourceMouseLeave = (e) => emit('hover-leave', e);
     justify-content: space-between;
     align-items: center;
     font-size: 12px;
-    color: #ccc;
+    color: #d9e2f3;
 }
 
 .resources-count {
     font-size: 11px;
-    color: #888;
+    color: #97a4be;
 }
 
 .resources-grid {
     flex: 1;
     overflow-x: auto;
     display: flex;
-    gap: 8px;
+    gap: 10px;
     align-items: flex-start;
     transition: background-color 0.2s;
+    padding: 2px;
+    border-radius: 8px;
 }
 
 .resources-grid.drag-over {
-    background-color: rgba(14, 99, 156, 0.2);
-    border: 2px dashed #0e639c;
+    background-color: rgba(43, 125, 255, 0.15);
+    border: 1px dashed #2d7fff;
 }
 
 .resource-item {
     width: 96px;
-    background: #2c2f33;
-    border-radius: 4px;
-    border: 1px solid #444;
-    padding: 4px;
+    background: #2b3039;
+    border-radius: 8px;
+    border: 1px solid #434c5b;
+    padding: 6px;
     cursor: pointer;
     display: flex;
     flex-direction: column;
@@ -132,14 +134,15 @@ const onResourceMouseLeave = (e) => emit('hover-leave', e);
 }
 
 .resource-item:hover {
-    border-color: #4fc3f7;
+    border-color: #64a2ff;
+    background: #313847;
 }
 
 .resource-thumb {
     width: 100%;
-    height: 40px;
+    height: 46px;
     background: #111;
-    border-radius: 3px;
+    border-radius: 6px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -159,7 +162,7 @@ const onResourceMouseLeave = (e) => emit('hover-leave', e);
 
 .resource-label {
     font-size: 11px;
-    color: #ddd;
+    color: #dbe5f8;
     white-space: nowrap;
     text-overflow: ellipsis;
     overflow: hidden;
@@ -169,9 +172,9 @@ const onResourceMouseLeave = (e) => emit('hover-leave', e);
     position: absolute;
     z-index: 20;
     background: #1e1e1e;
-    border: 1px solid #555;
-    border-radius: 4px;
-    padding: 4px;
+    border: 1px solid #4b5466;
+    border-radius: 8px;
+    padding: 6px;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
     pointer-events: none;
     transform: translateY(-100%);
@@ -184,9 +187,9 @@ const onResourceMouseLeave = (e) => emit('hover-leave', e);
 }
 
 .resource-hover-label {
-    margin-top: 2px;
+    margin-top: 4px;
     font-size: 11px;
-    color: #ccc;
+    color: #dbe5f8;
     white-space: nowrap;
     text-overflow: ellipsis;
     overflow: hidden;
@@ -197,6 +200,33 @@ const onResourceMouseLeave = (e) => emit('hover-leave', e);
     align-items: center;
     justify-content: center;
     font-size: 24px;
-    color: #ccc;
+    color: #c8d5ef;
+}
+
+:global(.app-layout.appLight) .resources-panel {
+    border-top: 1px solid #d0d8e6;
+    background: linear-gradient(180deg, #eef2f9 0%, #e8edf6 100%);
+}
+
+:global(.app-layout.appLight) .resources-header {
+    color: #2c3c57;
+}
+
+:global(.app-layout.appLight) .resources-count {
+    color: #657897;
+}
+
+:global(.app-layout.appLight) .resource-item {
+    background: #ffffff;
+    border-color: #ccd7e8;
+}
+
+:global(.app-layout.appLight) .resource-item:hover {
+    border-color: #3b7cff;
+    background: #f5f8ff;
+}
+
+:global(.app-layout.appLight) .resource-label {
+    color: #2d3c58;
 }
 </style>

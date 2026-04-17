@@ -13,6 +13,7 @@
     "tauri:build": "tauri build",
     "mcp:start": "node ./mcp/server.mjs",
     "mcp:start:http": "node ./mcp/http-gateway.mjs",
+    "mcp:start:runtime-bridge-http": "node ./mcp/runtime-bridge-http.mjs",
     "mcp:e2e": "node ./mcp/e2e-check.mjs",
     "mcp:ci-smoke": "node ./mcp/ci-smoke.mjs",
     "mcp:ci-smoke:strict-runtime": "node ./mcp/ci-smoke.mjs --strict-runtime"

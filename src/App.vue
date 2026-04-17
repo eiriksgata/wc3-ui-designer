@@ -1214,10 +1214,10 @@ onMounted(() => {
   background: #eef3fb;
 }
 
-.app-layout.appLight input[type='text'],
-.app-layout.appLight input[type='number'],
-.app-layout.appLight select,
-.app-layout.appLight textarea,
+.app-layout.appLight input[type='text']:not(.v-field__input),
+.app-layout.appLight input[type='number']:not(.v-field__input),
+.app-layout.appLight select:not(.v-field__input),
+.app-layout.appLight textarea:not(.v-field__input),
 .app-layout.appLight .parent-display {
   border-color: #c0cada;
   background: #ffffff;
@@ -1271,9 +1271,10 @@ onMounted(() => {
 .left {
   /* 宽度由 settings.controlPanelWidth 控制，这里只做最小限制 */
   min-width: 120px;
-  background: #252526;
+  background: linear-gradient(180deg, #2a2d34 0%, #24272e 100%);
   font-size: 13px;
   position: relative;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .left .control-buttons {
@@ -1489,9 +1490,9 @@ onMounted(() => {
 .right {
   flex: 0 0 260px;
   /* 固定宽度，不参与压缩，避免被挤掉 */
-  background: #252526;
+  background: linear-gradient(180deg, #2a2d34 0%, #24272e 100%);
   border-right: none;
-  border-left: 1px solid #333;
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
   user-select: none;
 }
 
@@ -1521,9 +1522,9 @@ onMounted(() => {
 .right {
   flex: 0 0 260px;
   /* 固定宽度，不参与压缩，避免被挤掉 */
-  background: #252526;
+  background: linear-gradient(180deg, #2a2d34 0%, #24272e 100%);
   border-right: none;
-  border-left: 1px solid #333;
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .center {
@@ -2003,7 +2004,7 @@ h3 {
   margin-bottom: 6px;
 }
 
-button {
+button:not(.v-btn) {
   font-size: 13px;
   padding: 6px 10px;
   margin: 3px 0;
@@ -2014,14 +2015,14 @@ button {
   color: #eee;
 }
 
-button:hover {
+button:not(.v-btn):hover {
   background: #444;
 }
 
-input[type='text'],
-input[type='number'],
-select,
-textarea {
+input[type='text']:not(.v-field__input),
+input[type='number']:not(.v-field__input),
+select:not(.v-field__input),
+textarea:not(.v-field__input) {
   width: 100%;
   margin: 2px 0 6px;
   padding: 4px 6px;
@@ -2032,7 +2033,7 @@ textarea {
   font-size: 12px;
 }
 
-textarea {
+textarea:not(.v-field__input) {
   resize: vertical;
   min-height: 60px;
 }
