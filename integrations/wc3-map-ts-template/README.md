@@ -9,6 +9,7 @@
 1. 启动 UI Designer MCP Server
    - `yarn mcp:start`
    - 或 HTTP 模式：`yarn mcp:start:http`
+   - 如需运行态 HTTP 转发：`yarn mcp:start:runtime-bridge-http`
 2. 模板 Agent 调用：
    - `ui_open_project`
    - `ui_apply_actions`（先 `dryRun=true` 预演，再正式执行）

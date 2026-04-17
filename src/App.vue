@@ -1204,13 +1204,13 @@ onMounted(() => {
   color: #2a3140;
 }
 
-.app-layout.appLight button {
+.app-layout.appLight button:not(.v-btn) {
   border-color: #c0cada;
   background: #f7f9fd;
   color: #223049;
 }
 
-.app-layout.appLight button:hover {
+.app-layout.appLight button:not(.v-btn):hover {
   background: #eef3fb;
 }
 

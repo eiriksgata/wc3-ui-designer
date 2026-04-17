@@ -180,12 +180,15 @@ Windows 另一种写法（使用 `yarn` 启动）：
 
 ```bash
 yarn mcp:start:http
+yarn mcp:start:runtime-bridge-http
 ```
 
 默认监听 `http://127.0.0.1:8765`，提供：
 
 - `GET /health`
 - `POST /call`（body 示例：`{ "tool": "ui_get_snapshot", "arguments": {} }`）
+
+运行态桥接 HTTP（可选）默认监听 `http://127.0.0.1:8766`，用于把运行态方法请求从 HTTP 转发到 UI 桥接。
 
 示例请求：
 
@@ -195,7 +198,9 @@ curl -X POST "http://127.0.0.1:8765/call" ^
   -d "{\"tool\":\"ui_validate\",\"arguments\":{}}"
 ```
 
-说明：当前“UI 运行态桥接（MCP Server <-> UI App）”仍是本地 `mcp-runtime` 队列；HTTP 这里是给 AI/外部工具接入 MCP 能力的入口。
+说明：现在支持“HTTP 优先 + 队列回退”：
+- MCP Server / HTTP 网关优先请求运行态桥接 HTTP（8766）
+- 若运行态桥接 HTTP 不可用，自动回退到 `mcp-runtime` 队列
 
 ### 构建
 

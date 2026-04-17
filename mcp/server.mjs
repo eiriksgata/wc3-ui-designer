@@ -8,6 +8,7 @@ import { ProjectEngine } from './project-engine.mjs';
 
 const engine = new ProjectEngine();
 const runtimeBridgeDir = path.resolve(process.cwd(), 'mcp-runtime');
+const runtimeBridgeHttpUrl = process.env.UI_DESIGNER_RUNTIME_BRIDGE_URL || 'http://127.0.0.1:8766/call';
 
 const protocolInfo = {
   mcpProtocolVersion: '1.0.0',
@@ -43,7 +44,7 @@ const waitForFile = async (filePath, timeoutMs = 15000) => {
   return false;
 };
 
-const callRuntimeBridge = async ({ method, params = {}, timeoutMs = 15000 }) => {
+const callRuntimeBridgeFileQueue = async ({ method, params = {}, timeoutMs = 15000 }) => {
   const requestId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const requestPath = path.join(runtimeBridgeDir, `request_${requestId}.json`);
   const responsePath = path.join(runtimeBridgeDir, `response_${requestId}.json`);
@@ -74,6 +75,37 @@ const callRuntimeBridge = async ({ method, params = {}, timeoutMs = 15000 }) => 
     throw new Error(response.error || `runtime bridge call failed: ${method}`);
   }
   return response.data;
+};
+
+const callRuntimeBridgeHttp = async ({ method, params = {}, timeoutMs = 15000 }) => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(runtimeBridgeHttpUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ method, params, timeoutMs }),
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      throw new Error(`runtime bridge http status=${response.status}`);
+    }
+    const payload = await response.json();
+    if (!payload?.ok) {
+      throw new Error(payload?.error || `runtime bridge http failed: ${method}`);
+    }
+    return payload.data;
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
+const callRuntimeBridge = async ({ method, params = {}, timeoutMs = 15000 }) => {
+  try {
+    return await callRuntimeBridgeHttp({ method, params, timeoutMs });
+  } catch {
+    return await callRuntimeBridgeFileQueue({ method, params, timeoutMs });
+  }
 };
 
 const parseActionHints = (actions = []) => {
