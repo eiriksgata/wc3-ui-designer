@@ -29,6 +29,11 @@
 
 该桥接使用本地目录 `mcp-runtime` 作为请求/响应队列。
 
+可直接参考示例脚本（事务+失败回滚）：
+
+- `node integrations/wc3-map-ts-template/runtime-transaction-example.mjs`
+- 事务执行后可调用 `ui_get_transaction_audit_trail` 按 `transactionId` 查询轨迹
+
 ## 约束建议
 
 - 先校验再导出。

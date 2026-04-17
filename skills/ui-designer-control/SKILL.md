@@ -20,6 +20,12 @@
 3. `ui_runtime_call(method=validate)`
 4. `ui_runtime_call(method=exportWithPlugin)`
 
+运行态事务模式（推荐）：
+
+1. `ui_runtime_transaction(actions=[...], transactionId="...")`
+2. 事务内部自动执行：快照 -> 应用动作 -> 校验 -> 失败回滚
+3. 通过 `ui_get_transaction_audit_trail(transactionId="...")` 回读事务轨迹
+
 ## Action DSL
 
 ```json
@@ -86,5 +92,6 @@
 ## Observability
 
 - 通过 `ui_get_audit_trail` 拉取最近动作日志。
+- 通过 `ui_get_transaction_audit_trail` 拉取事务级日志。
 - 建议按 `sessionId` 聚合，定位同一次需求执行链。
 - 若使用运行态桥接，故障排查优先检查 `mcp-runtime` 队列目录是否有堆积请求。

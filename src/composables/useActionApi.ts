@@ -9,6 +9,7 @@ interface ActionApiDeps {
     imageResources: Ref<ImageResource[]>;
     animations: Ref<Animation[]>;
     settings: Ref<Settings>;
+    nextId: Ref<number>;
     addWidgetWithHistory: (type: string) => void;
     deleteSelectedWithHistory: () => void;
     pushHistory: () => void;
@@ -29,6 +30,15 @@ export function useActionApi(deps: ActionApiDeps) {
         animations: clone(deps.animations.value),
         settings: clone(deps.settings.value),
     });
+
+    const replaceProjectSnapshot = (snapshot: DesignerSnapshot) => {
+        deps.widgetsList.value = clone(snapshot.widgets || []);
+        deps.imageResources.value = clone(snapshot.resources || []);
+        deps.animations.value = clone(snapshot.animations || []);
+        deps.settings.value = clone(snapshot.settings || deps.settings.value);
+        const maxId = deps.widgetsList.value.reduce((max, widget) => Math.max(max, widget.id || 0), 0);
+        deps.nextId.value = maxId + 1;
+    };
 
     const listWidgets = (): Widget[] => clone(deps.widgetsList.value);
 
@@ -139,6 +149,7 @@ export function useActionApi(deps: ActionApiDeps) {
 
     return {
         getProjectSnapshot,
+        replaceProjectSnapshot,
         listWidgets,
         batchApply,
         validate,

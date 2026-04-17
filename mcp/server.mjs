@@ -81,6 +81,8 @@ const parseActionHints = (actions = []) => {
   return { dangerous };
 };
 
+const createId = (prefix) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
 const server = new McpServer({
   name: 'ui-designer-mcp',
   version: '0.1.0',
@@ -244,6 +246,156 @@ server.tool(
     try {
       const data = await callRuntimeBridge({ method, params: params || {}, timeoutMs: timeoutMs || 15000 });
       return { content: [{ type: 'text', text: JSON.stringify(wrapData({ method, data }), null, 2) }] };
+    } catch (error) {
+      return { content: [{ type: 'text', text: JSON.stringify(normalizeError(error), null, 2) }] };
+    }
+  },
+);
+
+server.tool(
+  'ui_runtime_transaction',
+  '运行态事务执行：失败后自动回滚到执行前快照',
+  {
+    actions: z.array(z.record(z.any())),
+    validateAfterApply: z.boolean().optional(),
+    timeoutMs: z.number().int().min(1000).max(120000).optional(),
+    transactionId: z.string().optional(),
+  },
+  async ({ actions, validateAfterApply, timeoutMs, transactionId }) => {
+    try {
+      const txId = transactionId || createId('tx');
+      const effectiveTimeout = timeoutMs || 20000;
+      engine.appendTransactionEvent({
+        transactionId: txId,
+        phase: 'start',
+        actionCount: actions.length,
+      });
+      const beforeSnapshot = await callRuntimeBridge({
+        method: 'getProjectSnapshot',
+        params: {},
+        timeoutMs: effectiveTimeout,
+      });
+      const applyResult = await callRuntimeBridge({
+        method: 'batchApply',
+        params: { actions },
+        timeoutMs: effectiveTimeout,
+      });
+
+      if (applyResult?.ok === false || (Array.isArray(applyResult?.errors) && applyResult.errors.length > 0)) {
+        await callRuntimeBridge({
+          method: 'replaceProjectSnapshot',
+          params: { snapshot: beforeSnapshot },
+          timeoutMs: effectiveTimeout,
+        });
+        engine.appendTransactionEvent({
+          transactionId: txId,
+          phase: 'rollback',
+          reason: 'apply_failed',
+          details: applyResult,
+        });
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify(
+              wrapData(
+                {
+                  transactionId: txId,
+                  rolledBack: true,
+                  applyResult,
+                },
+                ['runtime transaction failed and rolled back'],
+              ),
+              null,
+              2,
+            ),
+          }],
+        };
+      }
+
+      let validateResult = null;
+      if (validateAfterApply !== false) {
+        validateResult = await callRuntimeBridge({
+          method: 'validate',
+          params: {},
+          timeoutMs: effectiveTimeout,
+        });
+        if (validateResult?.ok === false || (Array.isArray(validateResult?.diagnostics) && validateResult.diagnostics.length > 0)) {
+          await callRuntimeBridge({
+            method: 'replaceProjectSnapshot',
+            params: { snapshot: beforeSnapshot },
+            timeoutMs: effectiveTimeout,
+          });
+          engine.appendTransactionEvent({
+            transactionId: txId,
+            phase: 'rollback',
+            reason: 'validate_failed',
+            details: validateResult,
+          });
+          return {
+            content: [{
+              type: 'text',
+              text: JSON.stringify(
+                wrapData(
+                  {
+                    transactionId: txId,
+                    rolledBack: true,
+                    applyResult,
+                    validateResult,
+                  },
+                  ['runtime validation failed and rolled back'],
+                ),
+                null,
+                2,
+              ),
+            }],
+          };
+        }
+      }
+
+      engine.appendTransactionEvent({
+        transactionId: txId,
+        phase: 'commit',
+        details: {
+          applyResult,
+          validateResult,
+        },
+      });
+
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify(
+            wrapData({
+              transactionId: txId,
+              rolledBack: false,
+              applyResult,
+              validateResult,
+            }),
+            null,
+            2,
+          ),
+        }],
+      };
+    } catch (error) {
+      return { content: [{ type: 'text', text: JSON.stringify(normalizeError(error), null, 2) }] };
+    }
+  },
+);
+
+server.tool(
+  'ui_get_transaction_audit_trail',
+  '获取最近事务审计日志（transactionId）',
+  {
+    limit: z.number().int().min(1).max(500).optional(),
+    transactionId: z.string().optional(),
+  },
+  async ({ limit, transactionId }) => {
+    try {
+      const events = engine.getTransactionAuditTrail(limit || 100);
+      const filtered = transactionId
+        ? events.filter((event) => event.transactionId === transactionId)
+        : events;
+      return { content: [{ type: 'text', text: JSON.stringify(wrapData({ events: filtered }), null, 2) }] };
     } catch (error) {
       return { content: [{ type: 'text', text: JSON.stringify(normalizeError(error), null, 2) }] };
     }

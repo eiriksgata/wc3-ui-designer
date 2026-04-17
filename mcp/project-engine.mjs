@@ -54,6 +54,7 @@ export class ProjectEngine {
     this.project = defaultProject();
     this.projectPath = null;
     this.actionAudit = [];
+    this.transactionAudit = [];
   }
 
   async openProject(projectPath) {
@@ -323,5 +324,16 @@ export const ${className} = ${JSON.stringify(payload, null, 2)} as const;
 
   getAuditTrail(limit = 100) {
     return this.actionAudit.slice(-limit);
+  }
+
+  appendTransactionEvent(event) {
+    this.transactionAudit.push({
+      ...event,
+      at: event.at || new Date().toISOString(),
+    });
+  }
+
+  getTransactionAuditTrail(limit = 100) {
+    return this.transactionAudit.slice(-limit);
   }
 }

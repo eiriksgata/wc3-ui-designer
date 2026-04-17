@@ -993,6 +993,7 @@ const deleteSelectedWithHistory = () => {
 const actionApi = useActionApi({
   widgetsList,
   selectedIds,
+  nextId,
   imageResources,
   animations,
   settings,
