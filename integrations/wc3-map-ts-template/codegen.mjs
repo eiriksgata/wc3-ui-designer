@@ -41,6 +41,8 @@ function parseArgs(argv) {
         strict: false,
         check: false,
         mcp: null,
+        copyResources: null, // 目录；设置后按 war3 相对路径把 resources[*].localPath 落到本仓
+        copyResourcesOverwrite: true,
     };
     for (let i = 0; i < argv.length; i++) {
         const a = argv[i];
@@ -62,6 +64,15 @@ function parseArgs(argv) {
                 break;
             case '--mcp':
                 args.mcp = argv[++i] || 'http://127.0.0.1:8765';
+                break;
+            case '--copy-resources':
+                args.copyResources = argv[++i];
+                break;
+            case '--no-copy-resources':
+                args.copyResources = '';
+                break;
+            case '--no-overwrite-resources':
+                args.copyResourcesOverwrite = false;
                 break;
             case '-h':
             case '--help':
@@ -452,6 +463,78 @@ function sidecarToText(sidecar) {
     return JSON.stringify(sidecar, null, 2) + '\n';
 }
 
+// -------------------- 资源搬运 --------------------
+//
+// structured JSON 里 resources 长这样：
+//   [{ label, value: "war3mapImported/icon.blp", localPath: "C:\\Users\\...\\icon.blp", previewUrl }]
+// widget 的 image/clickImage/hoverImage 则只引用 `value`。
+// 这里按 war3 相对路径把 localPath 的文件拷到 targetDir 下。
+async function copyResourcesToTarget({ structured, widgets, targetDir, overwrite }) {
+    const resources = Array.isArray(structured?.resources) ? structured.resources : [];
+    if (resources.length === 0 && widgets.length > 0) {
+        // 极少数情况下 structured 不带 resources（比如老版本导出），只能退化为报 warning
+        return { copied: [], skipped: [], errors: [], warnings: ['structured JSON 缺少 resources 数组，跳过资源拷贝'] };
+    }
+    const byValue = new Map();
+    for (const r of resources) {
+        if (r && typeof r.value === 'string') byValue.set(r.value, r);
+    }
+    const used = new Set();
+    for (const w of widgets) {
+        for (const f of ['image', 'clickImage', 'hoverImage']) {
+            const v = w?.[f];
+            if (typeof v === 'string' && v.length > 0) used.add(v);
+        }
+    }
+
+    await fs.mkdir(targetDir, { recursive: true });
+    const copied = [];
+    const skipped = [];
+    const errors = [];
+    const warnings = [];
+
+    for (const value of used) {
+        const resource = byValue.get(value);
+        if (!resource) {
+            warnings.push(`未登记资源 (widget 引用了 "${value}" 但 resources 列表里没有)`);
+            continue;
+        }
+        const localPath = typeof resource.localPath === 'string' ? resource.localPath : '';
+        if (!localPath) {
+            skipped.push({ value, reason: 'no localPath' });
+            continue;
+        }
+        try {
+            await fs.access(localPath);
+        } catch {
+            errors.push({ value, localPath, reason: 'source missing' });
+            continue;
+        }
+        const relParts = value
+            .replace(/\\/g, '/')
+            .split('/')
+            .filter((p) => p.length > 0);
+        const destPath = path.join(targetDir, ...relParts);
+        await fs.mkdir(path.dirname(destPath), { recursive: true });
+        if (!overwrite) {
+            try {
+                await fs.access(destPath);
+                skipped.push({ value, reason: 'destination exists', destPath });
+                continue;
+            } catch {
+                // 不存在，继续拷贝
+            }
+        }
+        try {
+            await fs.copyFile(localPath, destPath);
+            copied.push({ value, fromPath: localPath, destPath });
+        } catch (e) {
+            errors.push({ value, localPath, destPath, reason: String(e?.message || e) });
+        }
+    }
+    return { copied, skipped, errors, warnings };
+}
+
 // -------------------- 主流程 --------------------
 
 function printHelp() {
@@ -464,6 +547,8 @@ function printHelp() {
         '  --class-name <Name>     Override module/class name',
         '  --resources-prefix <p>  Required resource path prefix (default: war3mapImported/)',
         '  --strict                Fail on any resource path violation',
+        '  --copy-resources <dir>  Also copy ImageResource.localPath -> <dir>/<war3 relative path>',
+        '  --no-overwrite-resources  When copying, skip if destination already exists',
         '  --check                 Do not write; exit 1 if the planned output differs from disk',
         '  -h, --help              Show this help',
     ];
@@ -517,6 +602,7 @@ async function main() {
           hashOf(sidecarForHash(JSON.parse(existingSidecar)))
         : true;
 
+    // --check 模式下，把资源缺失也算作 drift（只报告，不真拷贝）
     if (args.check) {
         const diffs = [];
         if (tsChanged) diffs.push(`TS drift: ${tsPath}`);
@@ -524,6 +610,30 @@ async function main() {
         if (resourceIssues.length > 0) {
             diffs.push(`${resourceIssues.length} resource path warning(s)`);
             resourceIssues.forEach((m) => diffs.push(`  - ${m}`));
+        }
+        if (args.copyResources) {
+            const widgets = structured?.widgets?.flat || structured?.widgets || [];
+            const resources = Array.isArray(structured?.resources) ? structured.resources : [];
+            const byValue = new Map(resources.map((r) => [r.value, r]));
+            for (const w of widgets) {
+                for (const f of ['image', 'clickImage', 'hoverImage']) {
+                    const v = w?.[f];
+                    if (typeof v !== 'string' || !v) continue;
+                    const dest = path.join(
+                        path.resolve(args.copyResources),
+                        ...v.replace(/\\/g, '/').split('/').filter(Boolean),
+                    );
+                    try {
+                        await fs.access(dest);
+                    } catch {
+                        const r = byValue.get(v);
+                        const hint = r?.localPath
+                            ? `需要从 ${r.localPath} 拷贝到 ${dest}`
+                            : `widget "${w.name || w.id}" 使用了未登记资源 "${v}"`;
+                        diffs.push(`resource drift: ${hint}`);
+                    }
+                }
+            }
         }
         if (diffs.length === 0) {
             console.log(`[ui:check] OK — ${tsPath}`);
@@ -541,6 +651,26 @@ async function main() {
     if (resourceIssues.length > 0) {
         console.warn(`[codegen] ${resourceIssues.length} resource warning(s):`);
         resourceIssues.forEach((m) => console.warn(`  - ${m}`));
+    }
+
+    // 资源拷贝（可选；传 --copy-resources <dir> 才会触发）
+    if (args.copyResources) {
+        const widgets = structured?.widgets?.flat || structured?.widgets || [];
+        const targetDir = path.resolve(args.copyResources);
+        const report = await copyResourcesToTarget({
+            structured,
+            widgets,
+            targetDir,
+            overwrite: args.copyResourcesOverwrite,
+        });
+        console.log(
+            `[codegen] resources: copied=${report.copied.length} skipped=${report.skipped.length} errors=${report.errors.length}`,
+        );
+        report.copied.forEach((r) => console.log(`  + ${r.value} -> ${r.destPath}`));
+        report.skipped.forEach((r) => console.log(`  = ${r.value}: ${r.reason}`));
+        report.warnings.forEach((m) => console.warn(`  ! ${m}`));
+        report.errors.forEach((r) => console.error(`  ✗ ${r.value}: ${r.reason}`));
+        if (report.errors.length > 0) return 2;
     }
     return 0;
 }

@@ -203,6 +203,266 @@ impl ProjectEngine {
         Ok(self.get_snapshot())
     }
 
+    // -------- 资源管理（image/clickImage/hoverImage） --------
+    //
+    // 设计约定：
+    //   - 图片资源在工程里用 `ImageResource { label, value, localPath, previewUrl }` 表达；
+    //   - widget 侧只存 war3 相对路径（`value`，如 `war3mapImported/icon.blp`），
+    //     `localPath` 是磁盘绝对路径（AI 通过 MCP 调用能拿到的那条路径）；
+    //   - AI 可先用 `list_resources` 盘点，再 `normalize_resource_paths` 把裸绝对路径登记成资源，
+    //     最后 `copy_resources` 把文件落到目标目录（一般是模板仓的 resource/）。
+
+    pub fn list_resources(&self, include_unused: bool) -> serde_json::Value {
+        use std::collections::BTreeMap;
+
+        // 收集每个 value 对应的使用方 widgetId
+        let mut used_by: BTreeMap<String, Vec<i64>> = BTreeMap::new();
+        for w in &self.project.widgets {
+            let id = w.get("id").and_then(|x| x.as_i64()).unwrap_or(0);
+            for field in ["image", "clickImage", "hoverImage"] {
+                if let Some(v) = w.get(field).and_then(|x| x.as_str()) {
+                    if v.is_empty() {
+                        continue;
+                    }
+                    used_by.entry(v.to_string()).or_default().push(id);
+                }
+            }
+        }
+
+        // 已登记资源按 value 建索引
+        let mut by_value: HashMap<String, &serde_json::Value> = HashMap::new();
+        for r in &self.project.resources {
+            if let Some(v) = r.get("value").and_then(|x| x.as_str()) {
+                by_value.insert(v.to_string(), r);
+            }
+        }
+
+        let mut all_values: Vec<String> = used_by.keys().cloned().collect();
+        if include_unused {
+            for v in by_value.keys() {
+                if !used_by.contains_key(v) {
+                    all_values.push(v.clone());
+                }
+            }
+        }
+
+        let mut out = Vec::with_capacity(all_values.len());
+        for value in all_values {
+            let registered = by_value.get(&value);
+            let label = registered
+                .and_then(|r| r.get("label").and_then(|x| x.as_str()))
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| {
+                    Path::new(&value.replace('\\', "/"))
+                        .file_name()
+                        .map(|n| n.to_string_lossy().to_string())
+                        .unwrap_or_else(|| value.clone())
+                });
+            let local_path = registered
+                .and_then(|r| r.get("localPath").and_then(|x| x.as_str()))
+                .map(|s| s.to_string())
+                .unwrap_or_default();
+            let exists = if local_path.is_empty() {
+                false
+            } else {
+                Path::new(&local_path).is_file()
+            };
+            let is_absolute = is_absolute_path(&value);
+            out.push(json!({
+                "value": value,
+                "label": label,
+                "localPath": local_path,
+                "exists": exists,
+                "registered": registered.is_some(),
+                "isAbsolutePath": is_absolute,
+                "usedByWidgetIds": used_by.get(&value).cloned().unwrap_or_default(),
+            }));
+        }
+        json!({ "resources": out })
+    }
+
+    pub async fn copy_resources(
+        &self,
+        target_dir: String,
+        values: Option<Vec<String>>,
+        overwrite: bool,
+    ) -> Result<serde_json::Value, String> {
+        let target_root = PathBuf::from(&target_dir);
+        fs::create_dir_all(&target_root)
+            .await
+            .map_err(|e| format!("建立目标目录失败 {}: {}", target_dir, e))?;
+
+        // 如果未显式指定 values，就默认拷贝所有"被 widget 引用的"资源
+        let target_values: Vec<String> = match values {
+            Some(v) if !v.is_empty() => v,
+            _ => {
+                let mut set: HashSet<String> = HashSet::new();
+                for w in &self.project.widgets {
+                    for field in ["image", "clickImage", "hoverImage"] {
+                        if let Some(v) = w.get(field).and_then(|x| x.as_str()) {
+                            if !v.is_empty() {
+                                set.insert(v.to_string());
+                            }
+                        }
+                    }
+                }
+                set.into_iter().collect()
+            }
+        };
+
+        let mut copied = Vec::new();
+        let mut skipped = Vec::new();
+        let mut errors = Vec::new();
+
+        for value in &target_values {
+            // 需要找到对应 ImageResource.localPath
+            let resource = self
+                .project
+                .resources
+                .iter()
+                .find(|r| r.get("value").and_then(|x| x.as_str()) == Some(value.as_str()));
+            let Some(resource) = resource else {
+                skipped.push(json!({ "value": value, "reason": "not registered" }));
+                continue;
+            };
+            let local_path = resource
+                .get("localPath")
+                .and_then(|x| x.as_str())
+                .unwrap_or("");
+            if local_path.is_empty() {
+                skipped.push(json!({ "value": value, "reason": "no localPath" }));
+                continue;
+            }
+            if !Path::new(local_path).is_file() {
+                errors.push(json!({
+                    "value": value,
+                    "localPath": local_path,
+                    "reason": "source missing"
+                }));
+                continue;
+            }
+            // 把 war3 风格的反斜杠归一成正斜杠，再按平台分隔符 join
+            let rel_norm = value.replace('\\', "/");
+            let rel_parts: Vec<&str> = rel_norm.split('/').filter(|p| !p.is_empty()).collect();
+            let mut dest = target_root.clone();
+            for p in &rel_parts {
+                dest.push(p);
+            }
+            if let Some(parent) = dest.parent() {
+                if let Err(e) = fs::create_dir_all(parent).await {
+                    errors.push(json!({
+                        "value": value,
+                        "reason": format!("mkdir parent failed: {}", e)
+                    }));
+                    continue;
+                }
+            }
+            if !overwrite && dest.exists() {
+                skipped.push(json!({
+                    "value": value,
+                    "reason": "destination exists and overwrite=false",
+                    "destPath": dest.to_string_lossy(),
+                }));
+                continue;
+            }
+            match fs::copy(local_path, &dest).await {
+                Ok(bytes) => copied.push(json!({
+                    "value": value,
+                    "fromPath": local_path,
+                    "destPath": dest.to_string_lossy(),
+                    "bytes": bytes,
+                })),
+                Err(e) => errors.push(json!({
+                    "value": value,
+                    "fromPath": local_path,
+                    "destPath": dest.to_string_lossy(),
+                    "reason": format!("copy failed: {}", e)
+                })),
+            }
+        }
+
+        Ok(json!({
+            "targetDir": target_dir,
+            "copied": copied,
+            "skipped": skipped,
+            "errors": errors,
+        }))
+    }
+
+    pub fn normalize_resource_paths(&mut self, prefix: Option<String>) -> serde_json::Value {
+        let prefix = {
+            let p = prefix.unwrap_or_else(|| "war3mapImported/".into());
+            if p.ends_with('/') { p } else { format!("{}/", p) }
+        };
+
+        // 先建立现有资源的 value -> label / localPath 索引（用 value 的反斜杠归一化 key）
+        let mut registered: HashMap<String, ()> = HashMap::new();
+        for r in &self.project.resources {
+            if let Some(v) = r.get("value").and_then(|x| x.as_str()) {
+                registered.insert(v.replace('\\', "/"), ());
+            }
+        }
+
+        let mut added: Vec<serde_json::Value> = Vec::new();
+        let mut rewritten: Vec<serde_json::Value> = Vec::new();
+
+        // 用 basename 去重，避免多个 widget 指向同一个 abs 路径时反复登记
+        let mut basename_to_war3: HashMap<String, String> = HashMap::new();
+
+        for w in self.project.widgets.iter_mut() {
+            let id = w.get("id").and_then(|x| x.as_i64()).unwrap_or(0);
+            let wobj = match w.as_object_mut() {
+                Some(o) => o,
+                None => continue,
+            };
+            for field in ["image", "clickImage", "hoverImage"] {
+                let cur = match wobj.get(field).and_then(|x| x.as_str()) {
+                    Some(s) if !s.is_empty() => s.to_string(),
+                    _ => continue,
+                };
+                if !is_absolute_path(&cur) {
+                    continue;
+                }
+                let cur_norm = cur.replace('\\', "/");
+                let basename = Path::new(&cur_norm)
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_else(|| cur.clone());
+                let war3_value = basename_to_war3
+                    .entry(basename.to_ascii_lowercase())
+                    .or_insert_with(|| format!("{}{}", prefix, basename))
+                    .clone();
+                // 登记资源（若还没有）
+                let key = war3_value.replace('\\', "/");
+                if !registered.contains_key(&key) {
+                    let res = json!({
+                        "label": basename,
+                        "value": war3_value,
+                        "localPath": cur,
+                        "previewUrl": ""
+                    });
+                    self.project.resources.push(res.clone());
+                    registered.insert(key.clone(), ());
+                    added.push(res);
+                }
+                // 改写 widget 字段
+                wobj.insert(field.to_string(), serde_json::Value::String(war3_value.clone()));
+                rewritten.push(json!({
+                    "widgetId": id,
+                    "field": field,
+                    "from": cur_norm,
+                    "to": war3_value,
+                }));
+            }
+        }
+
+        json!({
+            "prefix": prefix,
+            "addedResources": added,
+            "rewrittenWidgets": rewritten,
+        })
+    }
+
     pub fn get_snapshot(&self) -> ProjectSnapshot {
         let diagnostics = self.validate().diagnostics;
         ProjectSnapshot {
@@ -706,6 +966,32 @@ fn build_widget_tree(widgets: &[serde_json::Value]) -> Vec<serde_json::Value> {
         }
     }
     roots
+}
+
+/// 判断字符串是否是"裸绝对路径"。跨平台放宽：
+///   - Windows 盘符：`C:\foo` / `C:/foo`
+///   - UNC：`\\server\share`
+///   - POSIX：`/usr/...`
+pub fn is_absolute_path(s: &str) -> bool {
+    if s.is_empty() {
+        return false;
+    }
+    let bytes = s.as_bytes();
+    if s.starts_with("\\\\") || s.starts_with("//") {
+        return true;
+    }
+    if bytes.len() >= 3
+        && (bytes[0].is_ascii_alphabetic())
+        && bytes[1] == b':'
+        && (bytes[2] == b'\\' || bytes[2] == b'/')
+    {
+        return true;
+    }
+    if bytes[0] == b'/' {
+        // POSIX 绝对。注意不要把 `war3mapImported/xxx` 误判：它不以 `/` 开头。
+        return true;
+    }
+    false
 }
 
 fn escape_lua_text(text: &str) -> String {

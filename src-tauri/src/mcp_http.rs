@@ -248,6 +248,33 @@ struct UiGetTxAuditArgs {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+struct UiListResourcesArgs {
+    /// 是否包含"已登记但当前没有被任何 widget 引用"的资源；默认 false。
+    #[serde(default, rename = "includeUnused")]
+    include_unused: Option<bool>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct UiCopyResourcesArgs {
+    /// 目标目录。例如 wc3-map-ts-template 的 `resource/`；war3 相对路径会相对此目录展开。
+    #[serde(rename = "targetDir")]
+    target_dir: String,
+    /// 只拷贝这些 `value`（war3 相对路径）；留空 = 拷贝所有被 widget 引用的资源。
+    #[serde(default)]
+    values: Option<Vec<String>>,
+    /// 目标已存在时是否覆盖，默认 true。
+    #[serde(default)]
+    overwrite: Option<bool>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct UiNormalizeResourcePathsArgs {
+    /// 期望的 war3 前缀，默认 `war3mapImported/`。
+    #[serde(default)]
+    prefix: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 struct UiRuntimeCallArgs {
     method: String,
     #[serde(default)]
@@ -416,6 +443,64 @@ impl UiDesignerMcp {
             events.retain(|e| e.transaction_id == *tid);
         }
         Ok(Json(ok_envelope(json!({ "events": events }), vec![])))
+    }
+
+    #[tool(description = "列出当前项目中被 widget 引用的图片资源（含 localPath / exists / usedByWidgetIds）。AI 可据此得知哪些资源还没登记或源文件缺失。")]
+    async fn ui_list_resources(
+        &self,
+        Parameters(args): Parameters<UiListResourcesArgs>,
+    ) -> Result<Json<UiDesignerEnvelope>, McpError> {
+        let eng = self.engine.lock().await;
+        let data = eng.list_resources(args.include_unused.unwrap_or(false));
+        Ok(Json(ok_envelope(data, vec![])))
+    }
+
+    #[tool(description = "把资源文件从各自的 localPath 拷贝到 targetDir 下的 <war3 相对路径>（典型用法：把资源落到模板仓 `resource/`）。未指定 values 时默认拷贝所有被 widget 引用的资源。")]
+    async fn ui_copy_resources(
+        &self,
+        Parameters(args): Parameters<UiCopyResourcesArgs>,
+    ) -> Result<Json<UiDesignerEnvelope>, McpError> {
+        let eng = self.engine.lock().await;
+        let data = eng
+            .copy_resources(args.target_dir, args.values, args.overwrite.unwrap_or(true))
+            .await
+            .map_err(|e| McpError::internal_error(e, None))?;
+        let diags: Vec<String> = data
+            .get("errors")
+            .and_then(|e| e.as_array())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|x| x.get("reason").and_then(|r| r.as_str()))
+                    .map(|s| s.to_string())
+                    .collect()
+            })
+            .unwrap_or_default();
+        Ok(Json(ok_envelope(data, diags)))
+    }
+
+    #[tool(description = "把 widget 里裸绝对路径（例如 AI 直接贴进来的 C:\\Users\\...\\icon.png）登记为 ImageResource，并把 widget 字段改写为 `war3mapImported/<basename>` 等相对路径。通常在 ui_apply_actions 之后、ui_copy_resources 之前调用。")]
+    async fn ui_normalize_resource_paths(
+        &self,
+        Parameters(args): Parameters<UiNormalizeResourcePathsArgs>,
+    ) -> Result<Json<UiDesignerEnvelope>, McpError> {
+        let (data, snap_value) = {
+            let mut eng = self.engine.lock().await;
+            let data = eng.normalize_resource_paths(args.prefix);
+            let snap = eng.get_snapshot();
+            let sv = serde_json::to_value(&snap)
+                .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+            (data, sv)
+        };
+        // 如果设计器在跑，顺手把快照推到前端，避免画布还在用旧路径。
+        let _ = self
+            .runtime
+            .dispatch(
+                "replaceProjectSnapshot",
+                json!({ "snapshot": snap_value }),
+                5_000,
+            )
+            .await;
+        Ok(Json(ok_envelope(data, vec![])))
     }
 
     #[tool(description = "调用运行态方法（需设计器 UI；经事件桥接，无文件队列）")]
