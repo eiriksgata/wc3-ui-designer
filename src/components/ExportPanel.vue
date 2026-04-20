@@ -10,34 +10,17 @@
             <div class="export-body">
                 <!-- 导出资源：勾选 + 路径整行在一行 -->
                 <div class="export-section">
-                    <div class="export-line">
-                        <v-checkbox
-                            v-model="exportResourcesEnabledModel"
-                            density="compact"
-                            hide-details
-                            color="primary"
-                            label="导出资源"
-                            class="export-option-checkbox"
-                        />
-                        <div v-if="exportResourcesEnabledModel" class="export-path-inline">
-                            <span class="export-path-inline-label">资源导出路径：</span>
-                            <div class="export-path-input">
-                                <v-text-field
-                                    id="export-resources-path"
-                                    v-model="exportResourcesPathModel"
-                                    placeholder="选择资源导出目录..."
-                                    readonly
-                                    density="compact"
-                                    variant="outlined"
-                                    hide-details
-                                />
-                                <v-btn @click.stop="emitSelectExportResourcesPath" class="btn-select-path" size="small" color="primary" variant="flat">选择路径</v-btn>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- 导出代码：勾选 + 路径整行在一行 -->
-                    <div class="export-line">
+                    <div class="export-toggle-row">
+                        <label class="export-option">
+                            <v-checkbox
+                                v-model="exportResourcesEnabledModel"
+                                density="compact"
+                                hide-details
+                                color="primary"
+                                label="导出资源"
+                                class="export-option-checkbox"
+                            />
+                        </label>
                         <label class="export-option">
                             <v-checkbox
                                 v-model="exportCodeEnabledModel"
@@ -51,9 +34,31 @@
                                 ({{ currentPlugin.outputFormat?.toUpperCase() || 'CODE' }})
                             </span>
                         </label>
-                        <div v-if="exportCodeEnabledModel" class="export-path-inline">
+                    </div>
+
+                    <div v-if="exportResourcesEnabledModel" class="export-line">
+                        <div class="export-path-inline export-path-block">
+                            <span class="export-path-inline-label">资源导出路径：</span>
+                            <div class="export-path-input export-path-input-row">
+                                <v-text-field
+                                    id="export-resources-path"
+                                    v-model="exportResourcesPathModel"
+                                    placeholder="选择资源导出目录..."
+                                    readonly
+                                    density="compact"
+                                    variant="outlined"
+                                    hide-details
+                                    class="export-path-text-field"
+                                />
+                                <v-btn @click.stop="emitSelectExportResourcesPath" class="btn-select-path" size="small" color="primary" variant="flat">选择路径</v-btn>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div v-if="exportCodeEnabledModel" class="export-line">
+                        <div class="export-path-inline export-path-block">
                             <span class="export-path-inline-label">代码导出路径：</span>
-                            <div class="export-path-input">
+                            <div class="export-path-input export-path-input-row">
                                 <v-text-field
                                     id="export-code-path"
                                     v-model="exportCodePathModel"
@@ -62,6 +67,7 @@
                                     density="compact"
                                     variant="outlined"
                                     hide-details
+                                    class="export-path-text-field"
                                 />
                                 <v-btn @click.stop="emitSelectExportCodePath" class="btn-select-path" size="small" color="primary" variant="flat">选择路径</v-btn>
                             </div>
@@ -298,13 +304,20 @@ watch(
     margin-top: 6px;
 }
 
+.export-toggle-row {
+    display: flex;
+    align-items: center;
+    gap: 28px;
+    margin-bottom: 6px;
+}
+
 .export-section:last-child {
     border-bottom: none;
     margin-bottom: 0;
     padding-bottom: 0;
 }
 
-.export-body label {
+.export-section > label {
     display: block;
     margin: 6px 0 4px;
     font-size: 12px;
@@ -341,6 +354,8 @@ watch(
     display: flex;
     gap: 10px;
     align-items: center;
+    flex: 1;
+    min-width: 0;
 }
 
 .export-path-inline {
@@ -348,6 +363,13 @@ watch(
     display: flex;
     align-items: center;
     gap: 8px;
+    min-width: 0;
+}
+
+.export-path-block {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
 }
 
 .export-path-inline-label {
@@ -356,9 +378,17 @@ watch(
     white-space: nowrap;
 }
 
-.export-path-input input {
-    /* 让路径输入框有更大的基础宽度，优先占据整行空间 */
-    min-width: 410px;
+.export-path-input-row {
+    width: 100%;
+}
+
+.export-path-text-field {
+    flex: 1;
+    min-width: 260px;
+}
+
+.export-path-text-field :deep(.v-input) {
+    width: 100%;
 }
 
 .btn-select-path {
@@ -413,5 +443,20 @@ watch(
 .export-option-checkbox {
     margin-top: 0;
     margin-bottom: 0;
+}
+
+.export-option-checkbox :deep(.v-selection-control) {
+    align-items: center;
+    min-height: 24px;
+}
+
+.export-option-checkbox :deep(.v-selection-control__wrapper) {
+    align-self: center;
+}
+
+.export-option-checkbox :deep(.v-label) {
+    display: inline-flex;
+    align-items: center;
+    line-height: 24px;
 }
 </style>

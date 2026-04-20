@@ -16,7 +16,8 @@
     "mcp:streamable-smoke": "node ./scripts/mcp-streamable-smoke.mjs",
     "mcp:ci-smoke": "node ./scripts/mcp-ci-smoke.mjs",
     "mcp:ci-smoke:strict-runtime": "node ./scripts/mcp-ci-smoke.mjs --strict-runtime",
-    "mcp:shop-demo": "node ./scripts/mcp-apply-shop-demo.mjs"
+    "mcp:shop-demo": "node ./scripts/mcp-apply-shop-demo.mjs",
+    "mcp:runtime-test": "node ./scripts/mcp-runtime-call-test.mjs"
   },
   "dependencies": {
     "@mdi/font": "^7.4.47",

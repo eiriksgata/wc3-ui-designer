@@ -91,7 +91,10 @@ struct McpRuntimeBridgeReply {
 }
 
 #[tauri::command]
-fn mcp_runtime_bridge_reply(state: State<'_, McpHostState>, reply: McpRuntimeBridgeReply) -> Result<(), String> {
+fn mcp_runtime_bridge_reply(
+    state: State<'_, McpHostState>,
+    reply: McpRuntimeBridgeReply,
+) -> Result<(), String> {
     state.bridge.complete(&reply.request_id, reply.result);
     Ok(())
 }

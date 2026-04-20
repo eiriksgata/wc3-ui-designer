@@ -1,11 +1,20 @@
 <template>
-    <div class="resources-panel" :class="{ 'resources-panel--light': themeName === 'appLight' }"
-        :style="{ height: height + 'px' }" ref="panelRef">
-        <div class="resources-header">
+    <div class="resources-panel"
+        :class="{ 'resources-panel--light': themeName === 'appLight', 'resources-panel--collapsed': collapsed }"
+        :style="collapsed ? undefined : { height: height + 'px' }" ref="panelRef">
+        <div class="resources-header" :class="{ 'resources-header--collapsed': collapsed }" @click="onToggleCollapse">
             <span>资源管理器</span>
             <span class="resources-count">共 {{ imageResources.length }} 项</span>
+            <button
+                class="resources-toggle-btn"
+                type="button"
+                :title="collapsed ? '展开资源管理器' : '折叠资源管理器'"
+                @click.stop="onToggleCollapse"
+            >
+                {{ collapsed ? '▴' : '▾' }}
+            </button>
         </div>
-        <div class="resources-grid" ref="gridRef" @dragenter.prevent="onResourcesDragEnter"
+        <div v-if="!collapsed" class="resources-grid" ref="gridRef" @dragenter.prevent="onResourcesDragEnter"
             @dragover.prevent="onResourcesDragOver" @dragleave="onResourcesDragLeave" @drop.prevent="onResourcesDrop"
             :class="{ 'drag-over': isResourcesDragOver }">
             <!-- 导入资源按钮（第一个格子） -->
@@ -34,7 +43,7 @@
             </div>
         </div>
         <!-- 资源预览悬浮窗 -->
-        <div v-if="hoverPreview.visible && hoverPreview.res" class="resource-hover-preview"
+        <div v-if="!collapsed && hoverPreview.visible && hoverPreview.res" class="resource-hover-preview"
             :style="{ left: hoverPreview.x + 'px', top: hoverPreview.y + 'px' }">
             <template v-if="hoverPreview.res.previewUrl">
                 <img :src="hoverPreview.res.previewUrl" :alt="hoverPreview.res.label" />
@@ -50,6 +59,7 @@
 <script setup lang="ts">
 const props = defineProps({
     height: { type: Number, default: 200 },
+    collapsed: { type: Boolean, default: false },
     imageResources: { type: Array, default: () => [] },
     isResourcesDragOver: { type: Boolean, default: false },
     hoverPreview: { type: Object, default: () => ({ visible: false }) },
@@ -70,6 +80,7 @@ const emit = defineEmits([
     'hover-enter',
     'hover-move',
     'hover-leave',
+    'toggle-collapse',
 ]);
 
 const onImportResourcesClick = () => emit('import-resources');
@@ -81,6 +92,7 @@ const onResourcesDrop = (e) => emit('drop', e);
 const onResourceMouseEnter = (res, e) => emit('hover-enter', res, e);
 const onResourceMouseMove = (e) => emit('hover-move', e);
 const onResourceMouseLeave = (e) => emit('hover-leave', e);
+const onToggleCollapse = () => emit('toggle-collapse');
 </script>
 
 <style scoped>
@@ -95,17 +107,43 @@ const onResourceMouseLeave = (e) => emit('hover-leave', e);
     position: relative;
 }
 
+.resources-panel--collapsed {
+    padding: 4px 10px;
+}
+
 .resources-header {
     display: flex;
-    justify-content: space-between;
+    justify-content: flex-start;
     align-items: center;
+    gap: 8px;
     font-size: 12px;
     color: #d9e2f3;
+}
+
+.resources-header--collapsed {
+    cursor: pointer;
 }
 
 .resources-count {
     font-size: 11px;
     color: #97a4be;
+    margin-left: auto;
+}
+
+.resources-toggle-btn {
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: inherit;
+    font-size: 12px;
+    line-height: 1;
+    width: 22px;
+    height: 22px;
+    cursor: pointer;
+}
+
+.resources-toggle-btn:hover {
+    background: rgba(255, 255, 255, 0.12);
 }
 
 .resources-grid {
@@ -228,6 +266,10 @@ const onResourceMouseLeave = (e) => emit('hover-leave', e);
 
 .resources-panel--light .resources-count {
     color: #5a6b85;
+}
+
+.resources-panel--light .resources-toggle-btn:hover {
+    background: rgba(36, 50, 71, 0.1);
 }
 
 .resources-panel--light .resource-item {

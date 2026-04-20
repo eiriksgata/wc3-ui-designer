@@ -14,6 +14,23 @@
       </div>
       <div class="settings-content">
         <div class="settings-section">
+          <h3>外观</h3>
+          <label for="theme-select">主题</label>
+          <v-select
+            id="theme-select"
+            :model-value="themeName"
+            :items="themeOptions"
+            item-title="title"
+            item-value="value"
+            density="compact"
+            variant="outlined"
+            hide-details
+            @update:model-value="onThemeChange"
+          />
+          <div class="hint">切换应用主题（类似 VSCode 的颜色主题）</div>
+        </div>
+
+        <div class="settings-section">
           <h3>画布设置</h3>
           <label for="canvas-width">画布宽度</label>
           <v-text-field
@@ -72,7 +89,13 @@
 
         <div class="settings-section">
           <h3>其他设置</h3>
-          <v-checkbox v-model="localSettings.autoSave" density="compact" hide-details label="自动保存布局" />
+          <v-checkbox
+            v-model="localSettings.autoSave"
+            density="compact"
+            hide-details
+            label="自动保存布局"
+            class="settings-autosave-checkbox"
+          />
           <div class="hint">每次修改后自动保存到本地存储</div>
         </div>
       </div>
@@ -98,9 +121,15 @@ import {
 const props = defineProps({
   showSettings: Boolean,
   settings: Object,
+  themeName: { type: String, default: 'appDark' },
 });
 
-const emit = defineEmits(['update:showSettings', 'update:settings', 'save', 'reset']);
+const emit = defineEmits(['update:showSettings', 'update:settings', 'save', 'reset', 'set-theme']);
+
+const themeOptions = [
+  { title: '深色', value: 'appDark' },
+  { title: '浅色', value: 'appLight' },
+];
 
 const localSettings = ref({ ...props.settings });
 
@@ -147,6 +176,12 @@ const handleSave = () => {
 
 const handleReset = () => {
   emit('reset');
+};
+
+const onThemeChange = (value: string | null) => {
+  if (value === 'appDark' || value === 'appLight') {
+    emit('set-theme', value);
+  }
 };
 
 // 计算对话框样式：未拖动时使用居中；拖动后使用固定位置
@@ -249,7 +284,7 @@ onBeforeUnmount(() => {
   font-weight: 600;
 }
 
-.settings-section label {
+.settings-section > label {
   display: block;
   margin-bottom: 6px;
   font-size: 12px;
@@ -282,6 +317,21 @@ onBeforeUnmount(() => {
   margin-top: 4px;
   font-size: 11px;
   color: #888;
+}
+
+.settings-autosave-checkbox {
+  margin-top: 2px;
+}
+
+.settings-autosave-checkbox :deep(.v-selection-control) {
+  align-items: center;
+  min-height: 24px;
+}
+
+.settings-autosave-checkbox :deep(.v-label) {
+  display: inline-flex;
+  align-items: center;
+  line-height: 24px;
 }
 
 .settings-footer {

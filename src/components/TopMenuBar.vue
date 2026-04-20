@@ -1,8 +1,8 @@
 <template>
-    <div class="menubar">
+    <div class="menubar" data-tauri-drag-region>
         <v-menu location="bottom start" offset="4">
             <template #activator="{ props: menuProps }">
-                <v-btn v-bind="menuProps" variant="text" density="comfortable" class="menu-activator">文件</v-btn>
+                <v-btn v-bind="menuProps" variant="text" density="comfortable" class="menu-activator no-drag">文件</v-btn>
             </template>
             <v-list density="compact" bg-color="surface" class="menu-list">
                 <v-list-item title="新建 (Ctrl+N)" @click="emit('new-project')" />
@@ -26,7 +26,7 @@
 
         <v-menu location="bottom start" offset="4">
             <template #activator="{ props: menuProps }">
-                <v-btn v-bind="menuProps" variant="text" density="comfortable" class="menu-activator">编辑</v-btn>
+                <v-btn v-bind="menuProps" variant="text" density="comfortable" class="menu-activator no-drag">编辑</v-btn>
             </template>
             <v-list density="compact" bg-color="surface" class="menu-list">
                 <v-list-item title="撤销 (Ctrl+Z)" @click="emit('undo')" />
@@ -40,7 +40,7 @@
 
         <v-menu location="bottom start" offset="4">
             <template #activator="{ props: menuProps }">
-                <v-btn v-bind="menuProps" variant="text" density="comfortable" class="menu-activator">排列</v-btn>
+                <v-btn v-bind="menuProps" variant="text" density="comfortable" class="menu-activator no-drag">排列</v-btn>
             </template>
             <v-list density="compact" bg-color="surface" class="menu-list">
                 <v-list-item title="左对齐" @click="emit('align-left')" />
@@ -54,7 +54,7 @@
 
         <v-menu location="bottom start" offset="4">
             <template #activator="{ props: menuProps }">
-                <v-btn v-bind="menuProps" variant="text" density="comfortable" class="menu-activator">视图</v-btn>
+                <v-btn v-bind="menuProps" variant="text" density="comfortable" class="menu-activator no-drag">视图</v-btn>
             </template>
             <v-list density="compact" bg-color="surface" class="menu-list">
                 <v-list-item :title="`网格吸附：${gridSnapEnabled ? '开' : '关'}`" @click="emit('toggle-grid-snap')" />
@@ -63,25 +63,41 @@
 
         <v-menu location="bottom start" offset="4">
             <template #activator="{ props: menuProps }">
-                <v-btn v-bind="menuProps" variant="text" density="comfortable" class="menu-activator">工具</v-btn>
+                <v-btn v-bind="menuProps" variant="text" density="comfortable" class="menu-activator no-drag">工具</v-btn>
             </template>
             <v-list density="compact" bg-color="surface" class="menu-list">
                 <v-list-item title="导入资源文件夹" @click="emit('import-resources')" />
             </v-list>
         </v-menu>
 
-        <v-btn variant="text" density="comfortable" class="menu-activator" @click="emit('open-settings')">设置</v-btn>
-        <v-btn variant="text" density="comfortable" class="menu-activator" @click="emit('open-export')">导出 (F4)</v-btn>
-        <v-btn variant="text" density="comfortable" class="menu-activator" @click="emit('open-help')">帮助</v-btn>
-        <v-btn variant="text" density="comfortable" class="menu-activator" @click="emit('open-mcp-guide')">MCP（Streamable HTTP）</v-btn>
-        <v-btn variant="text" density="comfortable" class="menu-activator" @click="emit('toggle-theme')">
-            主题：{{ themeName === 'appDark' ? '深色' : '浅色' }}
-        </v-btn>
-        <span class="menubar-msg" v-if="message">{{ message }}</span>
+        <v-btn variant="text" density="comfortable" class="menu-activator no-drag" @click="emit('open-settings')">设置</v-btn>
+        <v-btn variant="text" density="comfortable" class="menu-activator no-drag" @click="emit('open-export')">导出 (F4)</v-btn>
+        <v-menu location="bottom start" offset="4">
+            <template #activator="{ props: menuProps }">
+                <v-btn v-bind="menuProps" variant="text" density="comfortable" class="menu-activator no-drag">帮助</v-btn>
+            </template>
+            <v-list density="compact" bg-color="surface" class="menu-list">
+                <v-list-item title="帮助" @click="emit('open-help')" />
+                <v-list-item title="MCP（Streamable HTTP）" @click="emit('open-mcp-guide')" />
+            </v-list>
+        </v-menu>
+        <div v-if="isTauriWindowReady" class="window-controls no-drag" data-tauri-drag-region="false">
+            <button class="window-btn window-btn-min" type="button" aria-label="最小化" data-tauri-drag-region="false" @click="onMinimize">
+                <span aria-hidden="true">−</span>
+            </button>
+            <button class="window-btn window-btn-max" type="button" :aria-label="isMaximized ? '还原窗口' : '最大化'"
+                data-tauri-drag-region="false" @click="onToggleMaximize">
+                <span aria-hidden="true">{{ isMaximized ? '❐' : '□' }}</span>
+            </button>
+            <button class="window-btn window-btn-close" type="button" aria-label="关闭窗口" data-tauri-drag-region="false" @click="onClose">
+                <span aria-hidden="true">×</span>
+            </button>
+        </div>
     </div>
 </template>
 
 <script setup lang="ts">
+import { onMounted, ref } from 'vue';
 import type { PropType } from 'vue';
 
 interface RecentProject {
@@ -93,7 +109,6 @@ const props = defineProps({
     gridSnapEnabled: { type: Boolean, default: false },
     message: { type: String, default: '' },
     recentProjects: { type: Array as PropType<RecentProject[]>, default: () => [] },
-    themeName: { type: String, default: 'appDark' },
 });
 
 const emit = defineEmits([
@@ -120,8 +135,46 @@ const emit = defineEmits([
     'open-export',
     'open-help',
     'open-mcp-guide',
-    'toggle-theme',
 ]);
+
+const isTauriWindowReady = ref(false);
+const isMaximized = ref(false);
+type TauriWindowRef = {
+    minimize: () => Promise<void>;
+    toggleMaximize: () => Promise<void>;
+    close: () => Promise<void>;
+    isMaximized: () => Promise<boolean>;
+};
+let tauriWindow: TauriWindowRef | null = null;
+
+onMounted(async () => {
+    if (!('__TAURI_INTERNALS__' in window)) return;
+    try {
+        const { getCurrentWindow } = await import('@tauri-apps/api/window');
+        tauriWindow = getCurrentWindow();
+        isMaximized.value = await tauriWindow.isMaximized();
+        isTauriWindowReady.value = true;
+    } catch {
+        tauriWindow = null;
+        isTauriWindowReady.value = false;
+    }
+});
+
+const onMinimize = async () => {
+    if (!tauriWindow) return;
+    await tauriWindow.minimize();
+};
+
+const onToggleMaximize = async () => {
+    if (!tauriWindow) return;
+    await tauriWindow.toggleMaximize();
+    isMaximized.value = await tauriWindow.isMaximized();
+};
+
+const onClose = async () => {
+    if (!tauriWindow) return;
+    await tauriWindow.close();
+};
 </script>
 
 <style scoped>
@@ -132,6 +185,8 @@ const emit = defineEmits([
     display: flex;
     gap: 4px;
     align-items: center;
+    -webkit-app-region: drag;
+    app-region: drag;
 }
 
 .menu-activator {
@@ -143,6 +198,11 @@ const emit = defineEmits([
     border-radius: 6px;
 }
 
+.no-drag {
+    -webkit-app-region: no-drag;
+    app-region: no-drag;
+}
+
 .menu-list {
     min-width: 220px;
     border: 1px solid rgba(255, 255, 255, 0.08);
@@ -152,5 +212,35 @@ const emit = defineEmits([
     margin-left: auto;
     font-size: 12px;
     color: #b8c5da;
+    user-select: none;
+}
+
+.window-controls {
+    margin-left: auto;
+    display: flex;
+    align-items: stretch;
+    height: 28px;
+}
+
+.window-btn {
+    width: 44px;
+    border: 0;
+    outline: none;
+    background: transparent;
+    color: #edf1fa;
+    cursor: pointer;
+    font-size: 14px;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.window-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.window-btn-close:hover {
+    background: #e81123;
 }
 </style>

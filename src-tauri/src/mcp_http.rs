@@ -17,7 +17,7 @@ use rmcp::{
 };
 use schemars::{JsonSchema, Schema, SchemaGenerator};
 use serde_json::json;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Manager};
 use tokio::sync::{Mutex, oneshot};
 use tokio_util::sync::CancellationToken;
 
@@ -80,6 +80,11 @@ impl RuntimeBridge {
     pub fn complete(&self, request_id: &str, result: serde_json::Value) {
         if let Some((_, tx)) = self.pending.remove(request_id) {
             let _ = tx.send(result);
+        } else {
+            log::warn!(
+                "[ui-designer] MCP 运行态 bridge_reply 无匹配的 requestId（可能已超时或重复）: {}",
+                request_id
+            );
         }
     }
 
@@ -97,13 +102,73 @@ impl RuntimeBridge {
             "method": method,
             "params": params
         });
-        self.app
-            .emit("mcp-runtime-request", payload)
-            .map_err(|e| e.to_string())?;
+        log::info!(
+            "[ui-designer] MCP 运行态 dispatch requestId={} method={}",
+            request_id,
+            method
+        );
+        // 不用 Tauri 事件：`emit`/`listen` 在部分环境下无法闭环。改为在主线程对主 Webview 执行 `eval`，
+        // 调用前端全局 `window.__uiDesignerMcpRuntimeDispatch(payload)`（与 useMcpRuntimeBridge 注册一致）。
+        let payload_json = serde_json::to_string(&payload).map_err(|e| e.to_string())?;
+        let main_label = std::env::var("UI_DESIGNER_WEBVIEW_LABEL").unwrap_or_else(|_| "main".to_string());
+        let (emit_done_tx, emit_done_rx) = oneshot::channel::<Result<(), String>>();
+        let app = self.app.clone();
+        if let Err(e) = self.app.clone().run_on_main_thread(move || {
+            let r = (|| -> Result<(), String> {
+                let script = format!(
+                    "(function(){{var p={}; if(typeof window.__uiDesignerMcpRuntimeDispatch==='function'){{ void window.__uiDesignerMcpRuntimeDispatch(p); }} else {{ console.error('[ui-designer] MCP 运行态未注册 __uiDesignerMcpRuntimeDispatch'); }}}})();",
+                    payload_json
+                );
+                let win = app.get_webview_window(&main_label).ok_or_else(|| {
+                    format!("未找到 WebviewWindow label={}", main_label)
+                })?;
+                win.eval(&script).map_err(|e| e.to_string())?;
+                Ok(())
+            })();
+            if let Err(ref err) = r {
+                log::error!("[ui-designer] MCP 主线程 eval 桥接失败: {}", err);
+            }
+            let _ = emit_done_tx.send(r);
+        }) {
+            let _ = self.pending.remove(&request_id);
+            return Err(e.to_string());
+        }
+        match emit_done_rx.await {
+            Ok(Ok(())) => {
+                log::debug!(
+                    "[ui-designer] MCP 运行态 eval 桥接已调度 requestId={}",
+                    request_id
+                );
+            }
+            Ok(Err(e)) => {
+                let _ = self.pending.remove(&request_id);
+                return Err(e);
+            }
+            Err(_) => {
+                let _ = self.pending.remove(&request_id);
+                return Err("emit 主线程完成通道已关闭".to_string());
+            }
+        }
         tokio::time::timeout(Duration::from_millis(timeout_ms), rx)
             .await
-            .map_err(|_| "runtime bridge timeout".to_string())?
-            .map_err(|_| "runtime bridge channel closed".to_string())
+            .map_err(|_| {
+                log::warn!(
+                    "[ui-designer] MCP 运行态 bridge 超时 {}ms requestId={} method={}",
+                    timeout_ms,
+                    request_id,
+                    method
+                );
+                let _ = self.pending.remove(&request_id);
+                "runtime bridge timeout".to_string()
+            })?
+            .map_err(|_| {
+                log::warn!(
+                    "[ui-designer] MCP 运行态 bridge 通道已关闭 requestId={} method={}",
+                    request_id,
+                    method
+                );
+                "runtime bridge channel closed".to_string()
+            })
     }
 }
 

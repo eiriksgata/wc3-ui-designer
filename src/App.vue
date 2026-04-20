@@ -4,7 +4,6 @@
     <div class="zoom-root">
       <!-- 顶部菜单栏：跨越整个窗口，包括左侧控件面板 -->
       <TopMenuBar :grid-snap-enabled="gridSnapEnabled" :message="message" :recent-projects="recentProjects"
-        :theme-name="activeThemeName"
         @new-project="handleNewProject" @open-project="loadProjectFromFile" @open-recent-project="openRecentProject"
         @save-project="saveProjectToFile" @save-as-project="saveProjectAsFile" @undo="undoLayout" @redo="redoLayout"
         @copy="copySelection" @paste="pasteClipboard" @delete-selected="deleteSelectedWithHistory"
@@ -12,7 +11,7 @@
         @align-v-center="alignVCenter" @align-same-width="alignSameWidth" @align-same-height="alignSameHeight"
         @toggle-grid-snap="toggleGridSnap" @import-resources="onImportResourcesClick" @open-settings="showSettings = true"
         @open-export="showExportPanel = true" @open-help="showKeyboardShortcuts = true"
-        @open-mcp-guide="showMcpUsageGuide = true" @toggle-theme="toggleAppTheme" />
+        @open-mcp-guide="showMcpUsageGuide = true" />
 
       <div class="main-row">
         <div class="left panel" :style="{ width: leftWidth + 'px' }" ref="leftPanelRef">
@@ -188,8 +187,14 @@
       </div>
 
       <!-- 设置对话框 -->
-      <SettingsDialog v-model:showSettings="showSettings" v-model:settings="settings" @save="handleSaveSettings"
-        @reset="handleResetSettings" />
+      <SettingsDialog
+        v-model:showSettings="showSettings"
+        v-model:settings="settings"
+        :theme-name="activeThemeName"
+        @save="handleSaveSettings"
+        @reset="handleResetSettings"
+        @set-theme="setAppTheme"
+      />
 
       <!-- 导出面板 -->
       <ExportPanel :show="showExportPanel" :ui-zoom="uiZoom" v-model:exportResourcesEnabled="exportResourcesEnabled"
@@ -206,16 +211,17 @@
         @close="showExportResultPanel = false" />
 
       <!-- 底部资源管理器分隔条 -->
-      <div class="h-resizer" @mousedown.prevent="startDragBottom"></div>
+      <div v-if="!isResourcesCollapsed" class="h-resizer" @mousedown.prevent="startDragBottom"></div>
 
       <!-- 底部资源管理器 -->
-      <ResourcesPanel :height="resourcesHeight" :theme-name="activeThemeName"
+      <ResourcesPanel :height="resourcesHeight" :theme-name="activeThemeName" :collapsed="isResourcesCollapsed"
         :image-resources="imageResources"
         :is-resources-drag-over="isResourcesDragOver" :hover-preview="hoverPreview" v-model:panelRef="resourcesPanelRef"
         v-model:gridRef="resourcesGridRef" @import-resources="onImportResourcesClick"
         @apply-resource="applyResourceToSelection" @drag-enter="onResourcesDragEnter" @drag-over="onResourcesDragOver"
         @drag-leave="onResourcesDragLeave" @drop="onResourcesDrop" @hover-enter="onResourceMouseEnter"
-        @hover-move="onResourceMouseMove" @hover-leave="onResourceMouseLeave" />
+        @hover-move="onResourceMouseMove" @hover-leave="onResourceMouseLeave"
+        @toggle-collapse="toggleResourcesCollapsed" />
       <!-- 隐藏的项目文件选择器（浏览器 / Tauri WebView 通用） -->
       <input ref="projectFileInput" type="file" accept=".uiproj,.json,application/json" style="display: none"
         @change="handleProjectFileSelected" />
@@ -273,7 +279,7 @@ import KeyboardShortcutsDialog from './components/KeyboardShortcutsDialog.vue';
 import McpUsageDialog from './components/McpUsageDialog.vue';
 import TopMenuBar from './components/TopMenuBar.vue';
 import PropertiesPanel from './components/PropertiesPanel.vue';
-import { activeThemeName, toggleAppTheme } from './plugins/vuetify';
+import { activeThemeName, setAppTheme } from './plugins/vuetify';
 import { useSettings } from './composables/useSettings';
 import { useCanvas } from './composables/useCanvas';
 import { useRuler } from './composables/useRuler';
@@ -402,8 +408,8 @@ const {
 // 消息提示
 const message = ref('');
 
-// 欢迎界面显隐（没有项目或 Ctrl+W 关闭项目时显示）
-const showWelcome = ref(true);
+// 欢迎界面显隐（默认关闭：启动后直接进入空白项目）
+const showWelcome = ref(false);
 
 // 使用最近项目列表 composable
 const recentProjectsComposable = useRecentProjects();
@@ -621,7 +627,7 @@ const performCloseProject = () => {
   clearCurrentProjectPath();
   resetExportConfig();
   message.value = '项目已关闭';
-  showWelcome.value = true;
+  showWelcome.value = false;
 };
 
 // 关闭确认对话框（自定义 UI，而不是浏览器原生 confirm）
@@ -677,6 +683,8 @@ watch(
 const leftWidth = ref(settings.value.controlPanelWidth || 220);
 const rightWidth = ref(260);
 const resourcesHeight = ref(200);
+const isResourcesCollapsed = ref(false);
+const lastExpandedResourcesHeight = ref(resourcesHeight.value);
 
 const MIN_LEFT_WIDTH = 140;
 const MAX_LEFT_WIDTH = 500;
@@ -684,6 +692,8 @@ const MIN_RIGHT_WIDTH = 180;
 const MAX_RIGHT_WIDTH = 500;
 const MIN_RESOURCES_HEIGHT = 120;
 const MAX_RESOURCES_HEIGHT = 400;
+
+const clampResourcesHeight = (h) => Math.min(MAX_RESOURCES_HEIGHT, Math.max(MIN_RESOURCES_HEIGHT, h));
 
 watch(
   () => settings.value.controlPanelWidth,
@@ -731,6 +741,7 @@ const startDragRight = (ev) => {
 };
 
 const startDragBottom = (ev) => {
+  if (isResourcesCollapsed.value) return;
   dragState.value = {
     type: 'bottom',
     startX: ev.clientX,
@@ -760,9 +771,22 @@ const handleDragMouseMove = (ev) => {
     rightWidth.value = w;
   } else if (s.type === 'bottom') {
     let h = s.resourcesHeight - dy; // 向上拖动增加高度
-    h = Math.min(MAX_RESOURCES_HEIGHT, Math.max(MIN_RESOURCES_HEIGHT, h));
+    h = clampResourcesHeight(h);
     resourcesHeight.value = h;
+    if (!isResourcesCollapsed.value) {
+      lastExpandedResourcesHeight.value = h;
+    }
   }
+};
+
+const toggleResourcesCollapsed = () => {
+  if (isResourcesCollapsed.value) {
+    isResourcesCollapsed.value = false;
+    resourcesHeight.value = clampResourcesHeight(lastExpandedResourcesHeight.value);
+    return;
+  }
+  lastExpandedResourcesHeight.value = clampResourcesHeight(resourcesHeight.value);
+  isResourcesCollapsed.value = true;
 };
 
 const stopDrag = () => {
@@ -1169,20 +1193,6 @@ onMounted(() => {
   loadSettings();
   loadRecentProjects();
   loadUiZoom();
-
-  try {
-    const raw = window.localStorage.getItem('frame_vue_layout');
-    if (raw) {
-      const arr = JSON.parse(raw);
-      if (Array.isArray(arr)) {
-        widgetsList.value = arr;
-        nextId.value = (arr.reduce((m, w) => Math.max(m, w.id || 0), 0) || 0) + 1;
-        clampAllWidgets();
-      }
-    }
-  } catch (e) {
-    console.warn('自动加载布局失败', e);
-  }
 
   onBeforeUnmount(() => {
     window.removeEventListener('resize', handleResize);
