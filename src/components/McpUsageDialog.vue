@@ -17,10 +17,9 @@
         <section class="mcp-section">
           <h3>0) VS Code / Copilot（MCP Streamable HTTP）</h3>
           <p class="tip">
-            网关在同一端口提供 <strong>MCP Streamable HTTP</strong>（<code>/</code> 与
-            <code>/mcp</code> 等价，Cursor 填无路径的 <code>http://127.0.0.1:8765</code> 亦可）。请先
-            <code>yarn mcp:start</code> 或 <code>yarn dev</code>，再写入 <code>mcp.json</code>。遗留脚本仍可用
-            <code>POST /call</code>。
+            桌面端内嵌 <strong>Rust MCP（rmcp）</strong>，在同一端口提供 <strong>MCP Streamable HTTP</strong>（<code>/</code> 与
+            <code>/mcp</code> 等价，Cursor 可填 <code>http://127.0.0.1:8765</code>）。请先
+            <code>yarn tauri:dev</code> 启动设计器，再写入 <code>mcp.json</code>。运行态通过 Tauri 事件桥接，无需单独 Node 进程。
           </p>
           <div class="form-grid">
             <div>
@@ -58,25 +57,16 @@
         <section class="mcp-section">
           <h3>1) 功能说明</h3>
           <p>
-            UI 设计器已内置 MCP 运行态桥接，会轮询工程目录下的
-            <code>mcp-runtime</code> 文件夹并处理请求。
+            运行态桥接通过 <strong>Tauri 事件</strong>（<code>mcp-runtime-request</code>）在桌面端与 Rust MCP
+            之间传递请求，<strong>不再使用</strong>工程目录或 AppLocalData 下的 <code>mcp-runtime</code> 文件队列。
           </p>
           <p>
-            你可以通过写入请求文件，调用设计器能力（如读取快照、批量修改、导出、撤销重做）。
+            外部 Agent 请通过 MCP 工具（如 <code>ui_runtime_call</code>、<code>ui_runtime_transaction</code>）访问设计器能力。
           </p>
         </section>
 
         <section class="mcp-section">
-          <h3>2) 目录与文件约定</h3>
-          <ul>
-            <li>请求文件：<code>mcp-runtime/request_&lt;requestId&gt;.json</code></li>
-            <li>响应文件：<code>mcp-runtime/response_&lt;requestId&gt;.json</code></li>
-            <li>请求建议在 2 分钟内处理，过期会返回错误。</li>
-          </ul>
-        </section>
-
-        <section class="mcp-section">
-          <h3>3) 常用方法</h3>
+          <h3>2) 常用方法</h3>
           <p>
             支持的方法包括：<code>batchApply</code>、<code>getProjectSnapshot</code>、
             <code>replaceProjectSnapshot</code>、<code>validate</code>、
@@ -86,15 +76,11 @@
         </section>
 
         <section class="mcp-section">
-          <h3>4) 请求示例</h3>
-          <pre class="json-example">{
-  "requestId": "demo-001",
-  "createdAt": "2026-04-17T12:00:00.000Z",
-  "method": "getProjectSnapshot",
-  "params": {}
-}</pre>
+          <h3>3) 集成说明</h3>
           <p class="tip">
-            写入后等待生成对应 response 文件，读取其中 <code>ok</code>、<code>data</code>、<code>error</code> 字段即可。
+            自研脚本请走 MCP Streamable HTTP 与上述工具；事件负载字段为
+            <code>requestId</code>、<code>method</code>、<code>params</code>，由前端处理完成后通过
+            <code>mcp_runtime_bridge_reply</code> 回传结果。
           </p>
         </section>
       </v-card-text>

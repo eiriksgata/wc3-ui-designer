@@ -1,131 +1,99 @@
-use std::{
-    path::PathBuf,
-    process::{Child, Command, Stdio},
-    sync::Mutex,
-};
+mod mcp_http;
+mod project_engine;
 
+use std::sync::Mutex;
+
+use mcp_http::RuntimeBridge;
 use tauri::{Manager, State};
+use tokio_util::sync::CancellationToken;
 
-struct McpServerState {
-    child: Mutex<Option<Child>>,
+struct McpHostState {
+    cancel: Mutex<Option<CancellationToken>>,
+    bridge: std::sync::Arc<RuntimeBridge>,
 }
 
-fn resolve_mcp_script_path() -> Option<PathBuf> {
-    if let Ok(explicit_path) = std::env::var("UI_DESIGNER_MCP_SCRIPT_PATH") {
-        let path = PathBuf::from(explicit_path);
-        if path.exists() {
-            return Some(path);
-        }
-    }
-
-    let mut candidates: Vec<PathBuf> = Vec::new();
-    if let Ok(cwd) = std::env::current_dir() {
-        candidates.push(cwd.join("mcp").join("start-http-stack.mjs"));
-        candidates.push(cwd.join("..").join("mcp").join("start-http-stack.mjs"));
-    }
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(parent) = exe.parent() {
-            candidates.push(parent.join("mcp").join("start-http-stack.mjs"));
-            candidates.push(parent.join("..").join("..").join("mcp").join("start-http-stack.mjs"));
-            candidates.push(parent.join("..").join("..").join("..").join("mcp").join("start-http-stack.mjs"));
-        }
-    }
-
-    candidates.into_iter().find(|path| path.exists())
-}
-
-fn start_mcp_server_inner(state: &McpServerState) -> Result<String, String> {
+fn start_mcp_server_inner(state: &McpHostState) -> Result<String, String> {
     {
         let guard = state
-            .child
+            .cancel
             .lock()
-            .map_err(|e| format!("MCP 进程状态锁定失败: {e}"))?;
-        if let Some(child) = guard.as_ref() {
-            return Ok(format!("MCP Server 已运行 (pid={})", child.id()));
+            .map_err(|e| format!("MCP 状态锁定失败: {e}"))?;
+        if guard.is_some() {
+            return Ok("MCP（Rust rmcp）已在运行".to_string());
         }
     }
 
-    let script_path = resolve_mcp_script_path()
-        .ok_or_else(|| "未找到 mcp/start-http-stack.mjs，请检查项目目录或设置 UI_DESIGNER_MCP_SCRIPT_PATH".to_string())?;
-    let script_str = script_path
-        .to_str()
-        .ok_or_else(|| "MCP 脚本路径不是有效 UTF-8".to_string())?;
-
-    let mut command = Command::new("node");
-    command
-        .arg(script_str)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
-
-    let child = command
-        .spawn()
-        .map_err(|e| format!("启动 MCP Server 失败，请确认 node 可用: {e}"))?;
-    let pid = child.id();
-
-    let mut guard = state
-        .child
-        .lock()
-        .map_err(|e| format!("MCP 进程状态锁定失败: {e}"))?;
-    *guard = Some(child);
-
-    Ok(format!("MCP Server 启动成功 (pid={pid})"))
-}
-
-fn stop_mcp_server_inner(state: &McpServerState) -> Result<String, String> {
-    let mut guard = state
-        .child
-        .lock()
-        .map_err(|e| format!("MCP 进程状态锁定失败: {e}"))?;
-    if let Some(mut child) = guard.take() {
-        child
-            .kill()
-            .map_err(|e| format!("停止 MCP Server 失败: {e}"))?;
-        let _ = child.wait();
-        return Ok("MCP Server 已停止".to_string());
+    let cancel = CancellationToken::new();
+    {
+        let mut guard = state
+            .cancel
+            .lock()
+            .map_err(|e| format!("MCP 状态锁定失败: {e}"))?;
+        *guard = Some(cancel.clone());
     }
-    Ok("MCP Server 未运行".to_string())
-}
 
-fn get_mcp_server_status_inner(state: &McpServerState) -> Result<(bool, Option<u32>), String> {
-    let mut guard = state
-        .child
-        .lock()
-        .map_err(|e| format!("MCP 进程状态锁定失败: {e}"))?;
-    if let Some(child) = guard.as_mut() {
-        match child.try_wait() {
-            Ok(Some(_)) => {
-                // 进程已退出，清理句柄
-                *guard = None;
-                Ok((false, None))
-            }
-            Ok(None) => Ok((true, Some(child.id()))),
-            Err(e) => Err(format!("读取 MCP 进程状态失败: {e}")),
+    let bridge = state.bridge.clone();
+    tauri::async_runtime::spawn(async move {
+        if let Err(e) = mcp_http::run_mcp_stack(cancel, bridge).await {
+            log::error!("[ui-designer] MCP HTTP 栈退出: {e}");
         }
-    } else {
-        Ok((false, None))
+    });
+
+    Ok("MCP（Rust rmcp）已启动".to_string())
+}
+
+fn stop_mcp_server_inner(state: &McpHostState) -> Result<String, String> {
+    let mut guard = state
+        .cancel
+        .lock()
+        .map_err(|e| format!("MCP 状态锁定失败: {e}"))?;
+    if let Some(c) = guard.take() {
+        c.cancel();
+        return Ok("MCP 已停止".to_string());
     }
+    Ok("MCP 未运行".to_string())
+}
+
+fn get_mcp_server_status_inner(state: &McpHostState) -> Result<(bool, Option<u32>), String> {
+    let guard = state
+        .cancel
+        .lock()
+        .map_err(|e| format!("MCP 状态锁定失败: {e}"))?;
+    Ok((guard.is_some(), None))
 }
 
 #[tauri::command]
-async fn start_mcp_server(state: State<'_, McpServerState>) -> Result<String, String> {
+async fn start_mcp_server(state: State<'_, McpHostState>) -> Result<String, String> {
     start_mcp_server_inner(&state)
 }
 
 #[tauri::command]
-async fn stop_mcp_server(state: State<'_, McpServerState>) -> Result<String, String> {
+async fn stop_mcp_server(state: State<'_, McpHostState>) -> Result<String, String> {
     stop_mcp_server_inner(&state)
 }
 
 #[tauri::command]
-async fn get_mcp_server_status(
-    state: State<'_, McpServerState>,
-) -> Result<serde_json::Value, String> {
+async fn get_mcp_server_status(state: State<'_, McpHostState>) -> Result<serde_json::Value, String> {
     let (running, pid) = get_mcp_server_status_inner(&state)?;
     Ok(serde_json::json!({
         "running": running,
         "pid": pid,
+        "implementation": "rust-rmcp",
     }))
+}
+
+/// 前端完成运行态请求后回传结果，与 `mcp-runtime-request` 事件配对。
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct McpRuntimeBridgeReply {
+    request_id: String,
+    result: serde_json::Value,
+}
+
+#[tauri::command]
+fn mcp_runtime_bridge_reply(state: State<'_, McpHostState>, reply: McpRuntimeBridgeReply) -> Result<(), String> {
+    state.bridge.complete(&reply.request_id, reply.result);
+    Ok(())
 }
 
 // 用系统默认编辑器打开文件
@@ -245,10 +213,6 @@ async fn send_f4_to_war3() -> Result<(), String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app = tauri::Builder::default()
-        .manage(McpServerState {
-            child: Mutex::new(None),
-        })
-        // 日志插件（仅调试模式）
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
@@ -258,36 +222,39 @@ pub fn run() {
                 )?;
             }
 
-            // 默认自动启动本地 MCP HTTP 栈（网关 + 运行态桥接），可通过环境变量显式关闭
+            let bridge = std::sync::Arc::new(RuntimeBridge::new(app.handle().clone()));
+            app.manage(McpHostState {
+                cancel: Mutex::new(None),
+                bridge: bridge.clone(),
+            });
+
             let auto_start = std::env::var("UI_DESIGNER_AUTO_START_MCP")
                 .map(|value| value != "0" && value.to_lowercase() != "false")
                 .unwrap_or(true);
             if auto_start {
-                let state = app.state::<McpServerState>();
+                let state = app.state::<McpHostState>();
                 if let Err(err) = start_mcp_server_inner(&state) {
-                    eprintln!("[ui-designer] 自动启动 MCP HTTP 栈失败: {err}");
+                    eprintln!("[ui-designer] 自动启动 MCP（Rust）失败: {err}");
                 }
             }
             Ok(())
         })
-        // 文件对话框插件
         .plugin(tauri_plugin_dialog::init())
-        // 文件系统插件
         .plugin(tauri_plugin_fs::init())
-        // 注册命令
         .invoke_handler(tauri::generate_handler![
             open_file_with_default_editor,
             send_f4_to_war3,
             start_mcp_server,
             stop_mcp_server,
-            get_mcp_server_status
+            get_mcp_server_status,
+            mcp_runtime_bridge_reply,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
 
     app.run(|app_handle, event| {
         if let tauri::RunEvent::Exit = event {
-            let state = app_handle.state::<McpServerState>();
+            let state = app_handle.state::<McpHostState>();
             let _ = stop_mcp_server_inner(&state);
         }
     });

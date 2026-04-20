@@ -1,121 +1,78 @@
 #!/usr/bin/env node
-import fs from 'node:fs/promises';
-import path from 'node:path';
+/**
+ * 通过 MCP Streamable HTTP 调用 `ui_runtime_transaction`（与桌面端 Tauri 事件桥接配合）。
+ * 语义关键词（供 CI 校验）：transactionId、sessionId、actionIds、replaceProjectSnapshot（失败回滚由工具在 Rust 侧调用 replaceProjectSnapshot）。
+ */
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 
-const bridgeDir = path.resolve(process.cwd(), 'mcp-runtime');
+const GATEWAY = process.env.UI_DESIGNER_MCP_HTTP_URL || 'http://127.0.0.1:8765';
 
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-const callRuntime = async (method, params = {}, timeoutMs = 15000) => {
-  const requestId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  const requestPath = path.join(bridgeDir, `request_${requestId}.json`);
-  const responsePath = path.join(bridgeDir, `response_${requestId}.json`);
-
-  await fs.mkdir(bridgeDir, { recursive: true });
-  await fs.writeFile(
-    requestPath,
-    JSON.stringify(
-      {
-        requestId,
-        method,
-        params,
-        createdAt: new Date().toISOString(),
-      },
-      null,
-      2,
-    ),
-    'utf8',
-  );
-
-  const start = Date.now();
-  while (Date.now() - start < timeoutMs) {
-    try {
-      const raw = await fs.readFile(responsePath, 'utf8');
-      await fs.unlink(responsePath).catch(() => {});
-      const response = JSON.parse(raw);
-      if (!response.ok) throw new Error(response.error || 'runtime call failed');
-      return response.data;
-    } catch (error) {
-      if (error && /ENOENT/.test(String(error))) {
-        await sleep(200);
-        continue;
-      }
-      throw error;
-    }
+const parseToolJson = (result) => {
+  const text = (result?.content || [])
+    .map((c) => (c?.type === 'text' ? c.text : ''))
+    .join('')
+    .trim();
+  if (!text) return result;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { raw: text, result };
   }
-
-  throw new Error(`runtime call timeout: ${method}`);
-};
-
-const runTransaction = async (actions) => {
-  const transactionId = `template-tx-${Date.now()}`;
-  const sessionId = `template-session-${Date.now()}`;
-  const enrichedActions = actions.map((action, index) => ({
-    ...action,
-    actionId: action.actionId || `template-action-${index + 1}-${Date.now()}`,
-  }));
-  const before = await callRuntime('getProjectSnapshot');
-  const apply = await callRuntime('batchApply', { actions: enrichedActions, sessionId });
-  if (apply?.ok === false || (Array.isArray(apply?.errors) && apply.errors.length > 0)) {
-    await callRuntime('replaceProjectSnapshot', { snapshot: before });
-    return {
-      ok: false,
-      rolledBack: true,
-      transactionId,
-      sessionId,
-      actionIds: enrichedActions.map((action) => action.actionId),
-      reason: 'apply failed',
-      apply,
-    };
-  }
-  const validate = await callRuntime('validate');
-  if (validate?.ok === false || (Array.isArray(validate?.diagnostics) && validate.diagnostics.length > 0)) {
-    await callRuntime('replaceProjectSnapshot', { snapshot: before });
-    return {
-      ok: false,
-      rolledBack: true,
-      transactionId,
-      sessionId,
-      actionIds: enrichedActions.map((action) => action.actionId),
-      reason: 'validate failed',
-      validate,
-    };
-  }
-  return {
-    ok: true,
-    rolledBack: false,
-    transactionId,
-    sessionId,
-    actionIds: enrichedActions.map((action) => action.actionId),
-    apply,
-    validate,
-  };
 };
 
 const main = async () => {
-  const txResult = await runTransaction([
-    {
-      type: 'createWidget',
-      payload: {
-        widgetType: 'button',
-        overrides: {
-          name: 'btnRuntimeStart',
-          text: '运行态开始',
-          x: 360,
-          y: 260,
-          w: 180,
-          h: 48,
+  const health = await fetch(`${GATEWAY}/health`).then((r) => r.json());
+  if (!health?.ok) {
+    console.error('请先 yarn tauri:dev 启动桌面端');
+    process.exit(1);
+  }
+
+  const base = new URL(GATEWAY.endsWith('/') ? GATEWAY : `${GATEWAY}/`);
+  const transport = new StreamableHTTPClientTransport(base);
+  const client = new Client({ name: 'wc3-template-runtime-example', version: '1.0.0' });
+  await client.connect(transport);
+
+  const transactionId = `template-tx-${Date.now()}`;
+  const raw = await client.callTool({
+    name: 'ui_runtime_transaction',
+    arguments: {
+      actions: [
+        {
+          type: 'createWidget',
+          actionId: `template-action-${Date.now()}`,
+          payload: {
+            widgetType: 'button',
+            overrides: {
+              name: 'btnRuntimeStart',
+              text: '运行态开始',
+              x: 360,
+              y: 260,
+              w: 180,
+              h: 48,
+            },
+          },
         },
-      },
+      ],
+      validateAfterApply: true,
+      timeoutMs: 20000,
+      transactionId,
     },
-  ]);
-  if (txResult.sessionId) {
-    console.log(`Query actions: ui_get_audit_trail(sessionId="${txResult.sessionId}")`);
+  });
+  await client.close();
+
+  const result = parseToolJson(raw);
+  const data = result?.data;
+  const sessionId = data?.sessionId;
+  const actionIds = data?.actionIds;
+
+  if (sessionId) {
+    console.log(`Query actions: ui_get_audit_trail(sessionId="${sessionId}")`);
   }
-  if (txResult.actionIds?.[0]) {
-    console.log(`Query one action: ui_get_audit_trail(actionId="${txResult.actionIds[0]}")`);
+  if (actionIds?.[0]) {
+    console.log(`Query one action: ui_get_audit_trail(actionId="${actionIds[0]}")`);
   }
-  console.log(JSON.stringify(txResult, null, 2));
+  console.log(JSON.stringify(result, null, 2));
 };
 
 main().catch((error) => {

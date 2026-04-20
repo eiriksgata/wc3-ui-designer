@@ -6,11 +6,9 @@
 
 ## 最小接入流程
 
-1. 启动 UI Designer MCP Server
-   - `yarn mcp:start`
-   - 或 HTTP 模式：`yarn mcp:start:http`
-   - 如需运行态 HTTP 转发：`yarn mcp:start:runtime-bridge-http`
-2. 模板 Agent 调用：
+1. 启动 UI Designer（**Tauri 桌面**，内嵌 Rust MCP，默认 `http://127.0.0.1:8765`）  
+   - `yarn tauri:dev`
+2. 模板 Agent 通过 **MCP Streamable HTTP** 调用工具：
    - `ui_open_project`
    - `ui_apply_actions`（先 `dryRun=true` 预演，再正式执行）
    - `ui_validate`
@@ -21,27 +19,19 @@
    - `node <ui-designer>/integrations/wc3-map-ts-template/bridge.mjs tmp/ui-structured.json src/generated/ui-designer.ts`
 5. 模板工程引用 `src/generated/ui-designer.ts` 进入后续代码生成链。
 
-HTTP 模式调用示例：
-
-```bash
-curl -X POST "http://127.0.0.1:8765/call" ^
-  -H "Content-Type: application/json" ^
-  -d "{\"tool\":\"ui_get_snapshot\",\"arguments\":{}}"
-```
+> 浏览器-only 的 `yarn dev` **没有**完整 MCP + 运行态，自动化与 Agent 请以桌面端为准。
 
 ## 运行态桥接（可选）
 
-当 UI Designer 桌面应用正在运行时，可用 `ui_runtime_call` 直接驱动运行态 `ActionApi`：
+当 UI Designer 桌面应用正在运行时，可用 `ui_runtime_call` / `ui_runtime_transaction` 驱动前端 `ActionApi`（经 **Tauri 事件**，无 Node 网关、无文件队列）。
 
 - `ui_runtime_call(method=batchApply, params={ actions: [...] })`
 - `ui_runtime_call(method=validate)`
 - `ui_runtime_call(method=exportWithPlugin, params={ pluginId: "lua-export" })`
 
-该桥接使用本地目录 `mcp-runtime` 作为请求/响应队列。
-
 ### VS Code MCP 配置（Streamable HTTP）
 
-先在本机 `yarn mcp:start` 或 `yarn dev`，再在 `mcp.json` 中使用：
+先在本机 `yarn tauri:dev`，再在 `mcp.json` 中使用：
 
 ```json
 {
@@ -54,14 +44,13 @@ curl -X POST "http://127.0.0.1:8765/call" ^
 }
 ```
 
-可直接参考示例脚本（事务+失败回滚）：
+可直接参考示例脚本（通过 MCP `ui_runtime_transaction`，需桌面端已运行）：
 
 - `node integrations/wc3-map-ts-template/runtime-transaction-example.mjs`
 - 事务执行后可调用 `ui_get_transaction_audit_trail` 按 `transactionId` 查询轨迹
-- 动作排障可调用 `ui_get_audit_trail` 并传 `sessionId/actionId/type` 过滤
+- 动作排障可调用 `ui_get_audit_trail` 并传过滤条件
 - 在流水线日志里同时记录 `transactionId`、`sessionId`、`actionIds`
-- 可在 UI Designer 仓库运行 `yarn mcp:ci-smoke` 做协议与示例链路冒烟校验
-- 若 CI 有运行中 UI 进程，可用 `yarn mcp:ci-smoke:strict-runtime` 做运行态探测
+- 可在 UI Designer 仓库运行 `yarn mcp:ci-smoke` 做静态与 `cargo test` 检查
 
 ## 约束建议
 

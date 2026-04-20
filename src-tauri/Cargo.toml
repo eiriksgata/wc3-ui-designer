@@ -32,6 +32,14 @@ windows = { version = "0.56", features = [
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_System_Diagnostics_ToolHelp",
 ] }
+rmcp = { version = "1.5", features = ["server", "macros", "schemars", "transport-streamable-http-server"] }
+axum = { version = "0.8", features = ["macros", "http1"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "signal"] }
+tower-http = { version = "0.6", features = ["cors"] }
+dashmap = "6"
+tokio-util = { version = "0.7", features = ["rt"] }
+chrono = { version = "0.4", features = ["serde"] }
+schemars = { version = "1.1", features = ["derive"] }
 
 [profile.release]
 strip = true

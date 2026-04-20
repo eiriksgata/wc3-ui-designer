@@ -104,48 +104,40 @@ yarn install
 
 ### 开发模式
 
-启动网页开发服务器，并**同时**拉起 MCP HTTP 网关（默认 `127.0.0.1:8765`）与运行态桥接 HTTP（默认 `127.0.0.1:8766`），便于本地用 curl/自定义客户端调试，无需再开两个终端：
-
 ```bash
 yarn dev
 ```
 
-若只需要纯前端、不需要 MCP HTTP 栈：
+若只需要纯前端：
 
 ```bash
 yarn dev:vite
 ```
 
-启动 Tauri 桌面应用开发模式（需要 Rust）：
+启动 Tauri 桌面应用（**MCP 与运行态桥接内嵌于 Rust**，默认 `127.0.0.1:8765`）：
 
 ```bash
 yarn tauri:dev
 ```
 
-默认情况下，桌面程序启动时会自动尝试拉起 **MCP HTTP 栈**（`mcp/start-http-stack.mjs`：同时包含网关 `8765` 与运行态桥接 `8766`）。
-如需关闭自动启动，可设置环境变量：
+默认情况下，桌面程序启动时会自动尝试拉起 **Rust MCP HTTP 服务**（`rmcp` Streamable HTTP）。如需关闭：
 
 ```bash
 UI_DESIGNER_AUTO_START_MCP=false
 ```
 
-如需指定启动脚本路径，可设置（一般无需修改）：
+端口与子路径（默认 `8765`、路径 `/` 与 `/mcp` 等价）可通过 `UI_DESIGNER_MCP_HTTP_PORT`、`UI_DESIGNER_MCP_STREAM_PATH` 调整。
 
-```bash
-UI_DESIGNER_MCP_SCRIPT_PATH=/absolute/path/to/mcp/start-http-stack.mjs
-```
+### HTTP 接口（Tauri 桌面运行时）
 
-### HTTP 接口
-
-同一进程内提供两种入口：
-
-- **MCP Streamable HTTP（推荐，VS Code / Cursor `type: "http"`）**：`http://127.0.0.1:8765/mcp`，或与 **根路径** `http://127.0.0.1:8765/` 等价（Cursor 常填无路径的 host:port）。显式子路径可通过 `UI_DESIGNER_MCP_STREAM_PATH` 修改（默认 `/mcp`）。
-- **遗留简化 RPC**：`POST http://127.0.0.1:8765/call`（`{ "tool", "arguments" }`），供脚本 / curl / 旧集成使用。
+- **MCP Streamable HTTP（VS Code / Cursor `type: "http"`）**：`http://127.0.0.1:8765/mcp`，或与根路径 `http://127.0.0.1:8765/` 等价。
+- **`GET /health`**：健康检查（返回 `data.mcp: "rust-rmcp"`）。
+- **运行态**：`ui_runtime*` 类工具通过 Tauri 事件与前端通信，**不再**使用 Node 独立进程或 `mcp-runtime` 文件队列。
 
 ### VS Code / Copilot（`type: "http"`）
 
-1. 先在本机启动：`yarn mcp:start` 或 `yarn dev`。
-2. 在 `mcp.json` 中增加（任选其一：`/` 与 `/mcp` 等价）：
+1. 先在本机启动 **`yarn tauri:dev`**（浏览器-only 的 `yarn dev` 无法提供完整 MCP + 运行态）。
+2. 在 `mcp.json` 中增加（`/` 与 `/mcp` 等价）：
 
 ```json
 {
@@ -158,48 +150,11 @@ UI_DESIGNER_MCP_SCRIPT_PATH=/absolute/path/to/mcp/start-http-stack.mjs
 }
 ```
 
-若 MCP 连接走 **沙箱**，请允许访问 `127.0.0.1`（或关闭该服务器的沙箱）。
+若 MCP 连接走 **沙箱**，请允许访问 `127.0.0.1`。
 
-**Cursor 连接失败、日志里出现 `diagnostics":["not found"]` 且协议为 `http-gateway`：** 说明请求打到了非 MCP 路由；请把 URL 设为 `http://127.0.0.1:8765/` 或 `http://127.0.0.1:8765/mcp`（不要只填端口却指向别的路径），并 **更新依赖后重启** `yarn dev`。
+**连接失败**：请确认 URL 为 `http://127.0.0.1:8765/` 或 `http://127.0.0.1:8765/mcp`，且桌面端已启动。
 
-`yarn dev` 已包含网关与运行态桥接；若你使用 `yarn dev:vite` 或需要与桌面端相同的「一键双进程」，可执行：
-
-```bash
-yarn mcp:start
-```
-
-或分别启动：
-
-```bash
-yarn mcp:start:http
-yarn mcp:start:runtime-bridge-http
-```
-
-默认监听：
-
-- **网关**：`http://127.0.0.1:8765` — `GET /health`、MCP **`/`** 与 **`/mcp`**（Streamable HTTP，等价）、`POST /call`（遗留）
-- **运行态桥接**：`http://127.0.0.1:8766` — 供网关将运行态调用转发到已打开的设计器 UI
-
-`POST /call` 请求体示例：
-
-```json
-{ "tool": "ui_get_snapshot", "arguments": {} }
-```
-
-命令行示例：
-
-```bash
-curl -X POST "http://127.0.0.1:8765/call" ^
-  -H "Content-Type: application/json" ^
-  -d "{\"tool\":\"ui_validate\",\"arguments\":{}}"
-```
-
-说明：**HTTP 优先 + 队列回退**
-
-- HTTP 网关优先请求运行态桥接 HTTP（8766）
-- 若运行态桥接 HTTP 不可用，自动回退到 `mcp-runtime` 文件队列
-
-外部 Agent（如地图模板脚本）请直接 `fetch`/`curl` 网关，或参考 `integrations/wc3-map-ts-template`。
+外部 Agent 示例（道具商店等）见 `scripts/mcp-apply-shop-demo.mjs`；地图模板见 `integrations/wc3-map-ts-template`。
 
 ### 构建
 
@@ -268,41 +223,9 @@ yarn type-check
 
 ## MCP CI 建议
 
-- **PR 快速检查**: 运行 `yarn mcp:ci-smoke`（无需 UI 运行态，适合所有 CI Runner）。
-- **Nightly/自托管检查**: 运行 `yarn mcp:ci-smoke:strict-runtime`（需要有运行中的 UI 进程和 `mcp-runtime` 桥接）。
-- **分层策略**: PR 阶段走快速 smoke，定时任务走 strict-runtime，避免普通 PR 被运行态依赖阻塞。
+- 运行 `yarn mcp:ci-smoke`（`cargo test` + `scripts/mcp-streamable-smoke.mjs` 静态校验 + 集成示例关键字检查）。
+- `yarn mcp:ci-smoke:strict-runtime` 仅保留兼容入口：会提示「文件队列已移除」，完整运行态需本地 `yarn tauri:dev` 验证。
 
 ### GitHub Actions 示例
 
-```yaml
-name: mcp-ci
-
-on:
-  pull_request:
-  schedule:
-    - cron: "0 2 * * *"
-
-jobs:
-  smoke:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-      - run: corepack enable
-      - run: yarn install --frozen-lockfile
-      - run: yarn mcp:ci-smoke
-
-  strict_runtime:
-    if: github.event_name == 'schedule'
-    runs-on: self-hosted
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-      - run: corepack enable
-      - run: yarn install --frozen-lockfile
-      - run: yarn mcp:ci-smoke:strict-runtime
-```
+仓库内 `.github/workflows/mcp-ci.yml` 已配置：在 `ubuntu-latest` 上安装 Node 与 Rust 后执行 `yarn mcp:ci-smoke`。

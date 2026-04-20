@@ -20,3 +20,6 @@ output
 frame
 
 UITemplate
+
+# 历史文件队列调试残留（勿提交）
+mcp-runtime/
