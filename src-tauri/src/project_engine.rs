@@ -120,6 +120,89 @@ impl ProjectEngine {
         Ok(json!({ "path": path }))
     }
 
+    /// 从 codegen.mjs 写出的 `*.ui.json` sidecar 恢复项目快照。
+    ///
+    /// 期望的 sidecar 形状（来自 wc3-template-export）：
+    ///   {
+    ///     "version": 1,
+    ///     "generator": "wc3-template-export",
+    ///     "widgets":  [ ...flat widget list... ],
+    ///     "settings": { canvasWidth, canvasHeight, ... } | null,
+    ///     "animations": { [widgetId]: [...] },
+    ///     ...
+    ///   }
+    ///
+    /// 无歧义地只接受 sidecar 格式——避免解析 TS AST。
+    pub async fn import_from_sidecar(
+        &mut self,
+        sidecar_path: String,
+    ) -> Result<ProjectSnapshot, String> {
+        let raw = fs::read_to_string(&sidecar_path)
+            .await
+            .map_err(|e| e.to_string())?;
+        let sidecar: serde_json::Value =
+            serde_json::from_str(&raw).map_err(|e| format!("sidecar JSON 解析失败: {}", e))?;
+
+        let generator = sidecar
+            .get("generator")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        if generator != "wc3-template-export" {
+            return Err(format!(
+                "sidecar generator 不匹配（期望 wc3-template-export，得到 \"{}\"）",
+                generator
+            ));
+        }
+        let widgets = sidecar
+            .get("widgets")
+            .and_then(|v| v.as_array())
+            .ok_or_else(|| "sidecar 缺少 widgets 数组".to_string())?
+            .clone();
+
+        // 以 default_project 为底，再按 sidecar 覆盖，保证其他字段（exportConfig 等）不丢失
+        let mut base = serde_json::to_value(default_project()).map_err(|e| e.to_string())?;
+        if let Some(obj) = base.as_object_mut() {
+            obj.insert("widgets".into(), serde_json::Value::Array(widgets));
+            if let Some(settings) = sidecar.get("settings").cloned() {
+                if !settings.is_null() {
+                    obj.insert("settings".into(), settings);
+                }
+            }
+            if let Some(animations) = sidecar.get("animations").cloned() {
+                // 旧 project 形状的 animations 是数组；sidecar 里是按 widgetId 的对象。
+                // 这里做一次展平：把对象 {id: [a1, a2]} 变为 [{..a1, widgetId: id}, ...]
+                if let Some(map) = animations.as_object() {
+                    let mut flat: Vec<serde_json::Value> = Vec::new();
+                    let mut next_id: i64 = 1;
+                    for (widget_id, list) in map.iter() {
+                        let wid: i64 = widget_id.parse().unwrap_or(0);
+                        if let Some(arr) = list.as_array() {
+                            for a in arr {
+                                let mut merged = a.clone();
+                                if let Some(o) = merged.as_object_mut() {
+                                    o.entry("id".to_string())
+                                        .or_insert_with(|| json!(next_id));
+                                    o.entry("widgetId".to_string())
+                                        .or_insert_with(|| json!(wid));
+                                }
+                                next_id += 1;
+                                flat.push(merged);
+                            }
+                        }
+                    }
+                    obj.insert("animations".into(), serde_json::Value::Array(flat));
+                    obj.insert("nextAnimId".into(), json!(next_id));
+                } else if animations.is_array() {
+                    obj.insert("animations".into(), animations);
+                }
+            }
+        }
+
+        self.project = serde_json::from_value(base).map_err(|e| e.to_string())?;
+        // 注意：不改 project_path——sidecar 只代表 UI 数据，不是 .uiproj 项目文件本身
+        Ok(self.get_snapshot())
+    }
+
     pub fn get_snapshot(&self) -> ProjectSnapshot {
         let diagnostics = self.validate().diagnostics;
         ProjectSnapshot {

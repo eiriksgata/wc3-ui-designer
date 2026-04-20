@@ -203,6 +203,12 @@ struct UiSaveProjectArgs {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+struct UiImportFromSidecarArgs {
+    /// 本机 `*.ui.json` 路径（由 wc3-template-export 生成）
+    path: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 struct UiApplyActionsArgs {
     actions: Vec<serde_json::Value>,
     #[serde(default)]
@@ -289,6 +295,35 @@ impl UiDesignerMcp {
             .await
             .map_err(|e| McpError::internal_error(e, None))?;
         Ok(Json(ok_envelope(r, vec![])))
+    }
+
+    #[tool(description = "从 wc3-template-export 生成的 *.ui.json sidecar 反向导入项目快照（用于 yarn ui:push）")]
+    async fn ui_import_from_sidecar(
+        &self,
+        Parameters(args): Parameters<UiImportFromSidecarArgs>,
+    ) -> Result<Json<UiDesignerEnvelope>, McpError> {
+        let snap = {
+            let mut eng = self.engine.lock().await;
+            eng.import_from_sidecar(args.path)
+                .await
+                .map_err(|e| McpError::internal_error(e, None))?
+        };
+        let diags = snap.diagnostics.clone();
+        let snap_value = serde_json::to_value(&snap)
+            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+
+        // 尽力而为：若设计器前端在跑，把快照推过去让画布立即刷新；
+        // 不在跑时（例如纯 CI 调用）忽略错误，不破坏返回值。
+        let _ = self
+            .runtime
+            .dispatch(
+                "replaceProjectSnapshot",
+                json!({ "snapshot": snap_value }),
+                5_000,
+            )
+            .await;
+
+        Ok(Json(ok_envelope(snap_value, diags)))
     }
 
     #[tool(description = "获取当前项目快照（引擎侧）")]

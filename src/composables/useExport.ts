@@ -30,6 +30,12 @@ export function useExport(
     const exportCodeEnabled = ref(true);
     const exportCodePath = ref('');
 
+    // wc3-template-export 专属选项（其他插件会忽略）
+    // exportClassName: 指定生成的类名/模块名，为空则使用项目名
+    // exportWriteSidecar: 是否在代码旁同时写 *.ui.json 作为反向导入权威来源
+    const exportClassName = ref('');
+    const exportWriteSidecar = ref(true);
+
     // 插件系统
     const pluginSystem = usePluginSystem();
     const selectedExportPlugin = ref<string>('lua-export'); // 默认使用 Lua 导出插件
@@ -656,6 +662,10 @@ export default plugin;
                     }
                     // 导出的类名使用当前项目名（xxx.uiproj -> xxx）
                     exportOptions.fileName = getProjectBaseName();
+                    // wc3-template-export 专属：允许用户指定类名覆盖项目名
+                    if (exportClassName.value && exportClassName.value.trim()) {
+                        exportOptions.className = exportClassName.value.trim();
+                    }
 
                     // 使用插件生成代码
                     const code = await generateCodeWithPlugin(widgetsList.value, exportOptions);
@@ -670,6 +680,36 @@ export default plugin;
                                 await invoke('send_f4_to_war3');
                             } catch (e) {
                                 console.warn('发送 F4 到 war3.exe 失败:', e);
+                            }
+                        }
+
+                        // wc3-template-export：同时写 sidecar *.ui.json（权威的反向导入来源）
+                        if (
+                            selectedExportPlugin.value === 'wc3-template-export' &&
+                            exportWriteSidecar.value
+                        ) {
+                            try {
+                                const sidecarPath = codeFilePath.replace(/\.(ts|tsx)$/i, '') + '.ui.json';
+                                const sidecar = {
+                                    version: 1,
+                                    generator: 'wc3-template-export',
+                                    generatedAt: new Date().toISOString(),
+                                    projectName: getProjectBaseName(),
+                                    className: exportOptions.className || getProjectBaseName(),
+                                    settings: {
+                                        canvasWidth: settings.value.canvasWidth,
+                                        canvasHeight: settings.value.canvasHeight,
+                                    },
+                                    widgets: widgetsList.value,
+                                    animations: getAnimationsForExport(),
+                                };
+                                await writeTextFile(
+                                    sidecarPath,
+                                    JSON.stringify(sidecar, null, 2),
+                                );
+                                messages.push(`Sidecar 已写出：${sidecarPath}`);
+                            } catch (e: any) {
+                                messages.push('写入 sidecar 失败：' + (e?.message || e));
                             }
                         }
                     }
@@ -698,6 +738,8 @@ export default plugin;
         exportResourcesPath.value = '';
         exportCodeEnabled.value = true;
         exportCodePath.value = '';
+        exportClassName.value = '';
+        exportWriteSidecar.value = true;
     };
 
     return {
@@ -708,6 +750,8 @@ export default plugin;
         exportResourcesPath,
         exportCodeEnabled,
         exportCodePath,
+        exportClassName,
+        exportWriteSidecar,
         selectedExportPlugin,
         exportPlugins,
         showPluginEditor,

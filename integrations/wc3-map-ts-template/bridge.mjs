@@ -1,4 +1,10 @@
 #!/usr/bin/env node
+/**
+ * @deprecated 请改用 codegen.mjs：
+ *     node codegen.mjs <structured-json-path> --out-dir <src/ui/generated>
+ * 本脚本保留是为了兼容旧 CI / 已有文档，只把 structured JSON 原样塞进一个
+ * TypeScript 常量，不再参与新的闭环工作流。
+ */
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
@@ -16,6 +22,9 @@ export const uiDesignerPayload = ${JSON.stringify(structuredJson, null, 2)} as c
 };
 
 const main = async () => {
+  console.warn(
+    '[bridge.mjs] DEPRECATED — 请迁移到 codegen.mjs（支持 --out-dir / --check / sidecar）。',
+  );
   const inputPath = process.argv[2];
   const outputPath = process.argv[3];
 

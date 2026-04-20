@@ -9,7 +9,8 @@
         @copy="copySelection" @paste="pasteClipboard" @delete-selected="deleteSelectedWithHistory"
         @clear-all="clearAllWithHistory" @align-left="alignLeft" @align-top="alignTop" @align-h-center="alignHCenter"
         @align-v-center="alignVCenter" @align-same-width="alignSameWidth" @align-same-height="alignSameHeight"
-        @toggle-grid-snap="toggleGridSnap" @import-resources="onImportResourcesClick" @open-settings="showSettings = true"
+        @toggle-grid-snap="toggleGridSnap" @import-resources="onImportResourcesClick"
+        @import-from-sidecar="importFromSidecar" @open-settings="showSettings = true"
         @open-export="showExportPanel = true" @open-help="showKeyboardShortcuts = true"
         @open-mcp-guide="showMcpUsageGuide = true" />
 
@@ -200,6 +201,7 @@
       <ExportPanel :show="showExportPanel" :ui-zoom="uiZoom" v-model:exportResourcesEnabled="exportResourcesEnabled"
         v-model:exportResourcesPath="exportResourcesPath" v-model:exportCodeEnabled="exportCodeEnabled"
         v-model:exportCodePath="exportCodePath" v-model:selectedExportPlugin="selectedExportPlugin"
+        v-model:exportClassName="exportClassName" v-model:exportWriteSidecar="exportWriteSidecar"
         :export-plugins="exportPlugins" @close="showExportPanel = false"
         @select-export-resources-path="selectExportResourcesPath" @select-export-code-path="selectExportCodePath"
         @load-custom-plugin="loadCustomPlugin" @create-new-plugin="createNewPlugin" @edit-plugin="handleEditPlugin"
@@ -209,6 +211,10 @@
       <!-- 导出结果面板 -->
       <ExportResultDialog :show="showExportResultPanel" :messages="exportResultMessages"
         @close="showExportResultPanel = false" />
+
+      <!-- Phase 4：AI 提案 - 确认门禁 -->
+      <ProposalPanel :proposals="proposals.list.value" @accept="proposals.accept"
+        @reject="(id) => proposals.reject(id)" />
 
       <!-- 底部资源管理器分隔条 -->
       <div v-if="!isResourcesCollapsed" class="h-resizer" @mousedown.prevent="startDragBottom"></div>
@@ -303,6 +309,8 @@ import { useCanvasInteraction } from './composables/useCanvasInteraction';
 import { useAnimations } from './composables/useAnimations';
 import { useActionApi } from './composables/useActionApi';
 import { useMcpRuntimeBridge } from './composables/useMcpRuntimeBridge';
+import { useProposals } from './composables/useProposals';
+import ProposalPanel from './components/ProposalPanel.vue';
 
 // 使用组合式函数
 const { showSettings, settings, saveSettings, resetSettings, loadSettings } = useSettings();
@@ -463,6 +471,8 @@ const {
   exportResourcesPath,
   exportCodeEnabled,
   exportCodePath,
+  exportClassName,
+  exportWriteSidecar,
   selectedExportPlugin,
   exportPlugins,
   showPluginEditor,
@@ -1062,10 +1072,67 @@ if (typeof window !== 'undefined') {
   (window as any).__uiDesignerActionApi = actionApi;
 }
 
+const proposals = useProposals(actionApi.batchApply);
+
 useMcpRuntimeBridge({
-  api: actionApi,
+  api: {
+    ...actionApi,
+    proposeActions: proposals.propose,
+  },
   message,
 });
+
+// 从 wc3-template-export 生成的 *.ui.json sidecar 反向导入（Phase 3）
+async function importFromSidecar() {
+  try {
+    const { open: tauriOpen } = await import('@tauri-apps/plugin-dialog');
+    const { readTextFile } = await import('@tauri-apps/plugin-fs');
+    const selected = await tauriOpen({
+      title: '选择 wc3-template-export 生成的 *.ui.json',
+      multiple: false,
+      filters: [
+        { name: 'UI Sidecar', extensions: ['json'] },
+        { name: '所有文件', extensions: ['*'] },
+      ],
+    });
+    if (!selected) return;
+    const filePath = Array.isArray(selected) ? selected[0] : selected;
+    const raw = await readTextFile(filePath);
+    const sidecar = JSON.parse(raw);
+    if (sidecar?.generator !== 'wc3-template-export') {
+      message.value = `sidecar generator 不匹配：${sidecar?.generator || '未知'}`;
+      return;
+    }
+    if (!Array.isArray(sidecar?.widgets)) {
+      message.value = 'sidecar 缺少 widgets 数组';
+      return;
+    }
+    pushHistory();
+    actionApi.replaceProjectSnapshot({
+      widgets: sidecar.widgets,
+      resources: imageResources.value,
+      animations: (() => {
+        const raw = sidecar.animations;
+        if (!raw) return [];
+        if (Array.isArray(raw)) return raw;
+        const flat: any[] = [];
+        let next = 1;
+        for (const [wid, list] of Object.entries(raw)) {
+          if (!Array.isArray(list)) continue;
+          for (const a of list as any[]) {
+            flat.push({ id: next++, widgetId: Number(wid) || 0, ...a });
+          }
+        }
+        return flat;
+      })(),
+      settings: sidecar.settings || settings.value,
+    });
+    message.value = `已从 sidecar 导入 ${sidecar.widgets.length} 个控件：${filePath}`;
+  } catch (e: any) {
+    console.error('从 sidecar 导入失败', e);
+    message.value = '从 sidecar 导入失败：' + (e?.message || e);
+  }
+}
 
 // 使用批量编辑 composable（需在 supportsImage 与 settings 定义之后）
 const batchEdit = useBatchEdit(widgetsList, selectedIds, pushHistory, moveWidgetWithChildren, supportsImage, settings);

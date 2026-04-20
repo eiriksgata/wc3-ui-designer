@@ -23,6 +23,20 @@ export interface Widget {
     draggable?: boolean;
     checked?: boolean;
     selectedIndex?: number;
+
+    // wc3-map-ts-template codegen hints (optional, non-breaking for existing plugins)
+    /**
+     * Explicit mapping to a template component class.
+     * Allowed values: 'Panel' | 'Button' | 'Dialog' | 'Text' | 'Tips' | 'MessageList' | 'FDFButton'
+     * When omitted, the template exporter infers from `type`.
+     */
+    templateKind?: string;
+    /**
+     * Free-form metadata consumed by the template exporter (zIndex, anchor,
+     * drag callbacks, color overrides, FDF template name, ...). Kept out of
+     * the top-level to avoid breaking older plugins that enumerate Widget fields.
+     */
+    meta?: Record<string, unknown>;
 }
 
 export interface Settings {

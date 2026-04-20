@@ -101,3 +101,19 @@ If local environment lacks Rust or desktop prerequisites, still ensure web/type-
 - Preserve existing naming/style conventions in touched files.
 - Prefer incremental, reviewable changes over broad rewrites.
 - Reference files with repository-relative paths in communication.
+
+## Template Codegen Rules (wc3-map-ts-template)
+
+This designer is paired with the [`wc3-map-ts-template`](../wc3-map-ts-template/) WC3 map repo through an explicit AI loop: **AI designs UI → user Accepts in the designer → codegen writes TS into the template repo → user can edit freely outside the generated block → next round pulls it back**. Agents touching the integration surface must honor the following:
+
+1. **Single source of truth for generated TS**: the `wc3-template-export` plugin ([`src/plugins/builtin/wc3-template-export.ts`](src/plugins/builtin/wc3-template-export.ts)) and [`integrations/wc3-map-ts-template/codegen.mjs`](integrations/wc3-map-ts-template/codegen.mjs) must produce **byte-identical output** for the same input. If you change one, change the other.
+2. **BEGIN/END markers are sacrosanct**: generated code is delimited by `// <ui-designer:generated:BEGIN>` / `// <ui-designer:generated:END>`. Agents must not emit code outside these markers, and must not remove these markers. All human-authored business logic (event callbacks, state wiring) lives outside them.
+3. **Sidecar is the reverse-import contract**: every `*.ts` emitted by the template exporter must be accompanied by a `*.ui.json` sidecar with `{ generator: "wc3-template-export", widgets, settings, animations, ... }`. `ui_import_from_sidecar` (in [`src-tauri/src/mcp_http.rs`](src-tauri/src/mcp_http.rs)) only accepts sidecars whose `generator` field matches, to avoid AST-parsing TS.
+4. **Resource path contract**: all widget image paths exported to the template repo must be rooted at `war3mapImported/`. The codegen CLI enforces this with `--resources-prefix war3mapImported/` (default) and can be made hard-fail with `--strict`.
+5. **Proposal gateway for AI changes**: AI-originated bulk changes should route through `ui_runtime_call(method="proposeActions", params={actions, sessionId, reason, title})`. This surfaces a user-facing Accept/Reject overlay via `src/composables/useProposals.ts` + `src/components/ProposalPanel.vue`. Bypassing the proposal layer (direct `ui_apply_actions` with `dryRun:false`) is only acceptable for small, low-risk edits or when the user has explicitly waived review.
+6. **Standard loop command order** (both repos assumed cloned as siblings):
+   1. `yarn tauri:dev` (this repo) — start the designer + MCP
+   2. `yarn ui:pull` (template repo) — regenerate `src/ui/generated/*.ts` + `.ui.json`
+   3. `yarn build:dev` (template repo) — verify the generated TS compiles against wc3ts
+   4. `yarn ui:check` (template repo) — gate CI; exits 1 on drift
+   5. `yarn ui:push` (template repo) — push sidecar edits back into the running designer (rare; usually used after manual layout tweaks in the template)

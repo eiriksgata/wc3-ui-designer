@@ -67,6 +67,7 @@
             </template>
             <v-list density="compact" bg-color="surface" class="menu-list">
                 <v-list-item title="导入资源文件夹" @click="emit('import-resources')" />
+                <v-list-item title="从模板 sidecar 导入…" @click="emit('import-from-sidecar')" />
             </v-list>
         </v-menu>
 
@@ -131,6 +132,7 @@ const emit = defineEmits([
     'align-same-height',
     'toggle-grid-snap',
     'import-resources',
+    'import-from-sidecar',
     'open-settings',
     'open-export',
     'open-help',

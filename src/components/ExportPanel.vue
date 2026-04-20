@@ -112,6 +112,40 @@
                     </div>
                 </div>
 
+                <!-- wc3-template-export 专属选项（类名 + sidecar） -->
+                <div v-if="isTemplateExport" class="export-section">
+                    <label style="display: block; margin-bottom: 8px;">模板导出选项：</label>
+                    <div class="export-line">
+                        <div class="export-path-inline">
+                            <span class="export-path-inline-label">生成类名 / 模块名：</span>
+                            <v-text-field
+                                v-model="exportClassNameModel"
+                                placeholder="留空则使用项目名（推荐）"
+                                density="compact"
+                                variant="outlined"
+                                hide-details
+                                class="export-path-text-field"
+                            />
+                        </div>
+                    </div>
+                    <div class="export-line">
+                        <label class="export-option">
+                            <v-checkbox
+                                v-model="exportWriteSidecarModel"
+                                density="compact"
+                                hide-details
+                                color="primary"
+                                label="同时写出 *.ui.json sidecar（用于反向导入 / ui:check）"
+                                class="export-option-checkbox"
+                            />
+                        </label>
+                    </div>
+                    <div class="plugin-description">
+                        生成的 TS 需放入 wc3-map-ts-template 仓的 <code>src/ui/generated/</code> 目录；
+                        自动段由 BEGIN/END 标记包裹，业务逻辑请写在标记之外。
+                    </div>
+                </div>
+
                 <div class="hint">至少选择一项导出选项。</div>
             </div>
             <v-card-actions class="export-footer">
@@ -147,6 +181,8 @@ const exportResourcesPathModel = defineModel('exportResourcesPath', { type: Stri
 const exportCodeEnabledModel = defineModel('exportCodeEnabled', { type: Boolean, default: false });
 const exportCodePathModel = defineModel('exportCodePath', { type: String, default: '' });
 const selectedExportPluginModel = defineModel('selectedExportPlugin', { type: String, default: 'lua-export' });
+const exportClassNameModel = defineModel('exportClassName', { type: String, default: '' });
+const exportWriteSidecarModel = defineModel('exportWriteSidecar', { type: Boolean, default: true });
 
 const emit = defineEmits([
     'close',
@@ -161,6 +197,9 @@ const emit = defineEmits([
 
 const currentPlugin = computed(() =>
     props.exportPlugins.find((p) => p.id === selectedExportPluginModel.value),
+);
+const isTemplateExport = computed(
+    () => selectedExportPluginModel.value === 'wc3-template-export',
 );
 const pluginItems = computed(() =>
     props.exportPlugins.map((plugin) => ({

@@ -44,6 +44,16 @@ type RuntimeActionApi = {
   listExportPlugins?: () => any;
   undo?: () => any;
   redo?: () => any;
+  /**
+   * Phase 4: 提案-确认门禁。AI 通过 ui_runtime_call(method="proposeActions") 进来，
+   * 前端排入队列，用户 Accept/Reject 后 Promise resolve，返回给 AI。
+   */
+  proposeActions?: (request: {
+    actions: any[];
+    sessionId?: string;
+    reason?: string;
+    title?: string;
+  }) => Promise<any>;
 };
 
 interface RuntimeBridgeOptions {
@@ -66,6 +76,15 @@ export function useMcpRuntimeBridge(options: RuntimeBridgeOptions) {
     }
 
     if (method === 'batchApply') return api.batchApply?.(params.actions || []);
+    if (method === 'proposeActions') {
+      const p = (params || {}) as any;
+      return api.proposeActions?.({
+        actions: p.actions || [],
+        sessionId: p.sessionId,
+        reason: p.reason,
+        title: p.title,
+      });
+    }
     if (method === 'getProjectSnapshot') return api.getProjectSnapshot?.();
     if (method === 'replaceProjectSnapshot') return api.replaceProjectSnapshot?.(params.snapshot);
     if (method === 'validate') return api.validate?.();
