@@ -1235,6 +1235,16 @@ onMounted(() => {
   font-size: 13px;
   position: relative;
   border-right: 1px solid var(--panel-border);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.left > h3,
+.left > .hint,
+.left > .control-buttons {
+  flex: 0 0 auto;
 }
 
 .left .control-buttons {
@@ -1255,15 +1265,23 @@ onMounted(() => {
   padding-top: 8px;
   border-top: 1px solid #333;
   position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .hierarchy-panel h4 {
   margin: 0 0 6px;
   font-size: 13px;
+  flex: 0 0 auto;
 }
 
 .hierarchy-list {
-  max-height: 260px;
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
   overflow: auto;
   padding-right: 4px;
 }

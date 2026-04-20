@@ -162,18 +162,30 @@ onMounted(async () => {
 
 const onMinimize = async () => {
     if (!tauriWindow) return;
-    await tauriWindow.minimize();
+    try {
+        await tauriWindow.minimize();
+    } catch (e) {
+        console.warn('最小化窗口失败:', e);
+    }
 };
 
 const onToggleMaximize = async () => {
     if (!tauriWindow) return;
-    await tauriWindow.toggleMaximize();
-    isMaximized.value = await tauriWindow.isMaximized();
+    try {
+        await tauriWindow.toggleMaximize();
+        isMaximized.value = await tauriWindow.isMaximized();
+    } catch (e) {
+        console.warn('切换窗口最大化失败:', e);
+    }
 };
 
 const onClose = async () => {
     if (!tauriWindow) return;
-    await tauriWindow.close();
+    try {
+        await tauriWindow.close();
+    } catch (e) {
+        console.warn('关闭窗口失败:', e);
+    }
 };
 </script>
 

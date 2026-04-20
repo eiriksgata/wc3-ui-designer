@@ -1,9 +1,9 @@
 <template>
     <div class="right panel" :style="{ width: rightWidth + 'px' }">
-        <h3>属性面板</h3>
-        <!-- 单选：显示完整属性 -->
-        <div v-if="selectedWidget && selectedIds.length === 1">
+        <div class="prop-header">
+            <h3>属性面板</h3>
             <v-tabs
+                v-if="selectedWidget && selectedIds.length === 1"
                 :model-value="activePropertyTab"
                 density="compact"
                 color="primary"
@@ -19,7 +19,10 @@
                     {{ tab.label }}
                 </v-tab>
             </v-tabs>
-
+        </div>
+        <div class="prop-body">
+        <!-- 单选：显示完整属性 -->
+        <div v-if="selectedWidget && selectedIds.length === 1">
             <!-- 属性页 -->
             <div v-if="activePropertyTab === 'props'">
                 <h4 class="prop-section-title">基础信息</h4>
@@ -564,6 +567,7 @@
                 </div>
             </div>
         </div>
+        </div>
     </div>
 </template>
 
@@ -707,12 +711,18 @@ const tweenTypeItems = [
 
 <style scoped>
 /* 复用 App 中的样式类名，保证视觉一致，这里只放必要覆盖 */
-.right {
+.right.panel {
     flex: 0 0 260px;
     background: #252526;
     border-right: none;
     border-left: 1px solid #333;
     user-select: none;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+    padding: 0;
+    overflow: hidden;
 }
 
 .right input,
@@ -721,8 +731,27 @@ const tweenTypeItems = [
     user-select: text;
 }
 
+.prop-header {
+    flex: 0 0 auto;
+    padding: 10px 10px 0;
+    background: inherit;
+    border-bottom: 1px solid var(--panel-border, #333);
+}
+
+.prop-header h3 {
+    margin: 0 0 6px;
+}
+
+.prop-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 8px 10px 14px;
+}
+
 .prop-tabs-vuetify {
-    margin-bottom: 10px;
+    margin-bottom: 0;
 }
 
 .prop-tab-vuetify {

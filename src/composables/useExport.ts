@@ -41,6 +41,15 @@ export function useExport(
     const pluginEditorName = ref('');
     const pluginEditorPath = ref('');
 
+    const resolveCurrentProjectPath = (): string | null => {
+        if (!currentProjectPathRef) return null;
+        const resolved =
+            typeof currentProjectPathRef === 'function'
+                ? currentProjectPathRef()
+                : currentProjectPathRef.value;
+        return typeof resolved === 'string' && resolved.trim() ? resolved : null;
+    };
+
     // 确认对话框状态
     const showConfirmDialog = ref(false);
     const confirmDialogMessage = ref('');
@@ -184,11 +193,7 @@ export default plugin;
 
     // 获取当前项目的基础名称（用于类名，例如 xxx.uiproj -> xxx）
     const getProjectBaseName = (): string => {
-        if (!currentProjectPathRef) return 'GeneratedUI';
-        const path =
-            typeof currentProjectPathRef === 'function'
-                ? currentProjectPathRef()
-                : (currentProjectPathRef.value || currentProjectPathRef);
+        const path = resolveCurrentProjectPath();
         if (!path) return 'GeneratedUI';
         const fileName = path.split(/[/\\]/).pop() || '';
         const base = fileName.replace(/\.(uiproj|json)$/i, '');
@@ -613,7 +618,7 @@ export default plugin;
                     if (!codeFilePath) {
                         // 如果没有指定路径，使用默认逻辑
                         const currentPath = currentProjectPathRef
-                            ? (typeof currentProjectPathRef === 'function' ? currentProjectPathRef() : (currentProjectPathRef.value || currentProjectPathRef))
+                            ? resolveCurrentProjectPath()
                             : null;
                         if (currentPath) {
                             const projectPath = currentPath;
@@ -731,8 +736,7 @@ export default plugin;
             currentProjectPathRef = pathRef;
         },
         getCurrentProjectPath: (): string | null => {
-            if (!currentProjectPathRef) return null;
-            return typeof currentProjectPathRef === 'function' ? currentProjectPathRef() : (currentProjectPathRef.value || currentProjectPathRef);
+            return resolveCurrentProjectPath();
         },
     };
 }
