@@ -1,7 +1,11 @@
 import { ref, type Ref } from 'vue';
 import type { Widget } from '../types';
 
-export function useHistory(widgetsList: Ref<Widget[]>, selectedIds: Ref<number[]>) {
+export function useHistory(
+    widgetsList: Ref<Widget[]>,
+    selectedIds: Ref<number[]>,
+    afterRestore?: () => void,
+) {
     // 历史记录栈
     const historyStack = ref<string[]>([]);
     const futureStack = ref<string[]>([]);
@@ -16,6 +20,7 @@ export function useHistory(widgetsList: Ref<Widget[]>, selectedIds: Ref<number[]
             if (Array.isArray(arr)) {
                 widgetsList.value = arr;
                 selectedIds.value = [];
+                afterRestore?.();
             }
         } catch (e) {
             console.warn('恢复布局失败', e);

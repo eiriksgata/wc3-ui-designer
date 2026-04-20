@@ -103,6 +103,8 @@
               backgroundSize: 'cover',
               backgroundPosition: 'center center'
             }">
+              <!-- 逻辑画布范围视觉提示（与外侧标尺区区分；不拦截鼠标） -->
+              <div class="canvas-inner-hint" aria-hidden="true"></div>
               <!-- 网格线 -->
               <template v-if="gridMode > 0">
                 <div v-for="x in gridXTicks" :key="'gx-' + x" class="grid-line-x" :style="{ left: x + 'px' }"></div>
@@ -169,12 +171,14 @@
         <!-- 画布与属性面板之间的拖动分隔条 -->
         <div class="v-resizer right-resizer" @mousedown.prevent="startDragRight"></div>
 
-        <PropertiesPanel :right-width="rightWidth" :selected-widget="selectedWidget" :selected-ids="selectedIds"
+        <PropertiesPanel :right-width="rightWidth" :canvas-width="settings.canvasWidth"
+          :canvas-height="settings.canvasHeight" :selected-widget="selectedWidget" :selected-ids="selectedIds"
           :all-widget-types="allWidgetTypes" :parent-candidates="parentCandidates" :image-resources="imageResources"
           :property-tabs="propertyTabs" :active-property-tab="activePropertyTab"
           :current-widget-animations="currentWidgetAnimations" :expanded-animation-id="expandedAnimationId"
           :batch-move="batchMove" :batch-size="batchSize" :batch-text="batchText" :batch-image="batchImage"
           :base-type-of="baseTypeOf" :supports-image="supportsImage"
+          @clamp-widgets="clampAllWidgets"
           @update:activePropertyTab="(v) => (activePropertyTab = v)" @update:batchText="(v) => (batchText = v)"
           @update:batchImage="(v) => (batchImage = v)" @toggleAnimationCard="toggleAnimationCard"
           @previewAnimation="previewAnimation" @duplicateAnimation="duplicateAnimation"
@@ -205,7 +209,8 @@
       <div class="h-resizer" @mousedown.prevent="startDragBottom"></div>
 
       <!-- 底部资源管理器 -->
-      <ResourcesPanel :height="resourcesHeight" :image-resources="imageResources"
+      <ResourcesPanel :height="resourcesHeight" :theme-name="activeThemeName"
+        :image-resources="imageResources"
         :is-resources-drag-over="isResourcesDragOver" :hover-preview="hoverPreview" v-model:panelRef="resourcesPanelRef"
         v-model:gridRef="resourcesGridRef" @import-resources="onImportResourcesClick"
         @apply-resource="applyResourceToSelection" @drag-enter="onResourcesDragEnter" @drag-over="onResourcesDragOver"
@@ -296,13 +301,21 @@ import { useMcpRuntimeBridge } from './composables/useMcpRuntimeBridge';
 // 使用组合式函数
 const { showSettings, settings, saveSettings, resetSettings, loadSettings } = useSettings();
 
+// UI 缩放（需在 useCanvas 之前初始化，以便视口钳位与适配使用同一套逻辑坐标）
+const uiZoomComposable = useUiZoom();
+const {
+  uiZoom,
+  applyUiZoom,
+  loadUiZoom,
+} = uiZoomComposable;
+
 // 快捷键帮助对话框显示状态
 const showKeyboardShortcuts = ref(false);
 const showMcpUsageGuide = ref(false);
-const canvas = useCanvas(settings);
+const canvas = useCanvas(settings, uiZoom);
 const { rulerStep, rulerXTicks, rulerYTicks } = useRuler(settings, canvas.canvasSize, canvas.canvasScale, canvas.panX, canvas.panY);
 const { gridMode, gridSnapEnabled, gridStep, gridXTicks, gridYTicks, toggleGridSnap } = useGrid(settings);
-const widgets = useWidgets();
+const widgets = useWidgets(settings);
 const resources = useResources();
 
 // 解构 canvas 相关变量
@@ -316,6 +329,8 @@ const {
   isPanning,
   panStart,
   onCanvasWheel,
+  clampCanvasPan,
+  fitCanvasToView,
 } = canvas;
 
 // 解构 widgets 相关变量
@@ -336,12 +351,13 @@ const {
   selectionStyle,
   addWidget,
   moveWidgetWithChildren,
+  clampAllWidgets,
   clearAll,
   deleteSelected,
 } = widgets;
 
 // 使用历史记录 composable（撤销/重做）
-const history = useHistory(widgetsList, selectedIds);
+const history = useHistory(widgetsList, selectedIds, clampAllWidgets);
 const {
   historyStack,
   futureStack,
@@ -397,14 +413,6 @@ const {
   saveRecentProjects,
   addRecentProject,
 } = recentProjectsComposable;
-
-// 使用 UI 缩放 composable
-const uiZoomComposable = useUiZoom();
-const {
-  uiZoom,
-  applyUiZoom,
-  loadUiZoom,
-} = uiZoomComposable;
 
 // 使用资源管理器 composable（需要在 message、selectedWidget 和 uiZoom 定义之后）
 const resourceManager = useResourceManager(imageResources, message, selectedWidget, uiZoom);
@@ -767,6 +775,14 @@ const stopDrag = () => {
   } catch (e) {
     console.warn('保存面板尺寸到设置失败', e);
   }
+  requestAnimationFrame(() => {
+    const el = canvasRef.value;
+    if (el) {
+      const rect = el.getBoundingClientRect();
+      canvasSize.value = { width: rect.width, height: rect.height };
+    }
+    clampCanvasPan();
+  });
 };
 
 // 层级树功能已移动到 useHierarchyTree composable
@@ -775,7 +791,7 @@ const stopDrag = () => {
 // 撤销/重做功能已移动到 useHistory composable
 
 // 使用剪贴板 composable
-const clipboardComposable = useClipboard(selectedWidget, widgetsList, selectedIds, nextId, pushHistory);
+const clipboardComposable = useClipboard(selectedWidget, widgetsList, selectedIds, nextId, pushHistory, clampAllWidgets);
 const {
   clipboard,
   copySelection,
@@ -971,7 +987,7 @@ const handleResetSettings = () => {
 // 项目文件操作和导出功能已移动到 useProjectFile 和 useExport composable
 
 // 使用对齐功能 composable
-const alignment = useAlignment(widgetsList, selectedIds, pushHistory, message);
+const alignment = useAlignment(widgetsList, selectedIds, pushHistory, message, settings);
 const {
   alignLeft,
   alignTop,
@@ -1008,6 +1024,7 @@ const actionApi = useActionApi({
   settings,
   addWidgetWithHistory,
   deleteSelectedWithHistory,
+  clampAllWidgets,
   pushHistory,
   undoLayout,
   redoLayout,
@@ -1026,8 +1043,8 @@ useMcpRuntimeBridge({
   message,
 });
 
-// 使用批量编辑 composable
-const batchEdit = useBatchEdit(widgetsList, selectedIds, pushHistory, moveWidgetWithChildren, supportsImage);
+// 使用批量编辑 composable（需在 supportsImage 与 settings 定义之后）
+const batchEdit = useBatchEdit(widgetsList, selectedIds, pushHistory, moveWidgetWithChildren, supportsImage, settings);
 const {
   batchMove,
   batchSize,
@@ -1065,7 +1082,9 @@ const canvasInteraction = useCanvasInteraction(
   gridStep,
   moveWidgetWithChildren,
   pushHistory,
-  uiZoom
+  uiZoom,
+  clampCanvasPan,
+  settings,
 );
 const {
   selectionRectRef,
@@ -1090,12 +1109,18 @@ onMounted(() => {
     };
   };
 
-  const handleResize = () => updateCanvasSize();
+  const handleResize = () => {
+    updateCanvasSize();
+    clampCanvasPan();
+  };
 
   nextTick(() => {
     // 初始推入一份历史，用于撤销
     pushHistory();
     updateCanvasSize();
+    requestAnimationFrame(() => {
+      fitCanvasToView();
+    });
     window.addEventListener('resize', handleResize);
   });
 
@@ -1152,6 +1177,7 @@ onMounted(() => {
       if (Array.isArray(arr)) {
         widgetsList.value = arr;
         nextId.value = (arr.reduce((m, w) => Math.max(m, w.id || 0), 0) || 0) + 1;
+        clampAllWidgets();
       }
     }
   } catch (e) {
@@ -1170,82 +1196,6 @@ onMounted(() => {
 </script>
 
 <style>
-.app-layout {
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
-}
-
-.app-layout.appLight {
-  color: #1f2430;
-}
-
-.app-layout.appLight .left,
-.app-layout.appLight .right {
-  background: #f6f8fc;
-  border-color: #d3dae6;
-}
-
-.app-layout.appLight .center {
-  background: #edf1f8;
-}
-
-.app-layout.appLight .menubar,
-.app-layout.appLight .toolbar {
-  background: #e8edf6;
-  border-color: #cfd8e6;
-}
-
-.app-layout.appLight .menu,
-.app-layout.appLight .menubar-msg,
-.app-layout.appLight .hint,
-.app-layout.appLight h3,
-.app-layout.appLight label {
-  color: #2a3140;
-}
-
-.app-layout.appLight button:not(.v-btn) {
-  border-color: #c0cada;
-  background: #f7f9fd;
-  color: #223049;
-}
-
-.app-layout.appLight button:not(.v-btn):hover {
-  background: #eef3fb;
-}
-
-.app-layout.appLight input[type='text']:not(.v-field__input),
-.app-layout.appLight input[type='number']:not(.v-field__input),
-.app-layout.appLight select:not(.v-field__input),
-.app-layout.appLight textarea:not(.v-field__input),
-.app-layout.appLight .parent-display {
-  border-color: #c0cada;
-  background: #ffffff;
-  color: #243247;
-}
-
-.app-layout.appLight .canvas {
-  border-color: #ccd5e4;
-  background: #e8edf4;
-}
-
-.app-layout.appLight :deep(.v-card) {
-  border-color: #d3dceb !important;
-  box-shadow: 0 10px 30px rgba(26, 43, 77, 0.12);
-}
-
-.app-layout.appLight :deep(.v-field) {
-  background: #fff;
-}
-
-.app-layout.appLight :deep(.v-list) {
-  background: #fff;
-}
-
-.app-layout.appLight :deep(.v-btn.v-btn--variant-text) {
-  color: #31415f;
-}
-
 .zoom-root {
   display: flex;
   flex-direction: column;
@@ -1271,10 +1221,10 @@ onMounted(() => {
 .left {
   /* 宽度由 settings.controlPanelWidth 控制，这里只做最小限制 */
   min-width: 120px;
-  background: linear-gradient(180deg, #2a2d34 0%, #24272e 100%);
+  background: var(--panel-bg);
   font-size: 13px;
   position: relative;
-  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  border-right: 1px solid var(--panel-border);
 }
 
 .left .control-buttons {
@@ -1490,9 +1440,9 @@ onMounted(() => {
 .right {
   flex: 0 0 260px;
   /* 固定宽度，不参与压缩，避免被挤掉 */
-  background: linear-gradient(180deg, #2a2d34 0%, #24272e 100%);
+  background: var(--panel-bg);
   border-right: none;
-  border-left: 1px solid rgba(255, 255, 255, 0.08);
+  border-left: 1px solid var(--panel-border);
   user-select: none;
 }
 
@@ -1511,20 +1461,12 @@ onMounted(() => {
   padding: 8px 4px;
 }
 
-.resource-item.import-item .import-thumb {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 24px;
-  color: #ccc;
-}
-
 .right {
   flex: 0 0 260px;
   /* 固定宽度，不参与压缩，避免被挤掉 */
-  background: linear-gradient(180deg, #2a2d34 0%, #24272e 100%);
+  background: var(--panel-bg);
   border-right: none;
-  border-left: 1px solid rgba(255, 255, 255, 0.08);
+  border-left: 1px solid var(--panel-border);
 }
 
 .center {
@@ -1533,7 +1475,7 @@ onMounted(() => {
   /* 允许中间区域在窗口变窄时收缩，保证右侧属性面板始终可见 */
   display: flex;
   flex-direction: column;
-  background: #1e1e1e;
+  background: var(--surface-bg);
 }
 
 .v-resizer {
@@ -1556,7 +1498,7 @@ onMounted(() => {
 .menubar-msg {
   margin-left: auto;
   font-size: 12px;
-  color: #ccc;
+  color: var(--menu-msg-color);
 }
 
 .export-overlay {
@@ -1944,42 +1886,22 @@ onMounted(() => {
 
 .context-menu {
   position: absolute;
-  background: #2d2d30;
-  border: 1px solid #3e3e42;
-  border-radius: 4px;
-  padding: 4px 0;
   z-index: 2000;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
   display: inline-block;
-  /* 让容器宽度随内容自适应 */
-}
-
-.context-menu button {
-  display: block;
-  /* 占一整行，方便点击 */
-  width: 100%;
-  /* 宽度跟随菜单容器 */
-  justify-content: flex-start;
-  border: none;
-  background: transparent;
-  padding: 4px 12px;
-  border-radius: 0;
-  text-align: left;
-}
-
-.context-menu button:hover:not(:disabled) {
-  background: #3a3a3d;
-}
-
-.context-menu button:disabled {
-  opacity: 0.5;
-  cursor: default;
+  min-width: 176px;
+  padding: 6px;
+  border-radius: 10px;
+  background: #2b2e34;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow:
+    0 4px 6px rgba(0, 0, 0, 0.25),
+    0 12px 28px rgba(0, 0, 0, 0.35);
 }
 
 .context-menu hr {
-  margin: 4px 0;
+  margin: 6px 4px;
   border: none;
-  border-top: 1px solid #3e3e42;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .toolbar {
@@ -2017,6 +1939,35 @@ button:not(.v-btn) {
 
 button:not(.v-btn):hover {
   background: #444;
+}
+
+/* 右键菜单项：必须放在全局 button 规则之后，否则会继承粗边框与错位间距 */
+.context-menu button:not(.v-btn) {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 8px 12px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #e8ecf4;
+  font-size: 12px;
+  font-weight: 450;
+  line-height: 1.35;
+  letter-spacing: 0.01em;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+.context-menu button:not(.v-btn):hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.context-menu button:not(.v-btn):disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
 }
 
 input[type='text']:not(.v-field__input),
@@ -2077,7 +2028,30 @@ label {
   transform-origin: top left;
   margin-top: 0;
   margin-left: 0;
+  overflow: hidden;
   background: radial-gradient(circle at top left, #303030, #1a1a1a);
+}
+
+/* 与标尺外侧灰色区域区分：可放置控件的逻辑画布范围 */
+.canvas-inner-hint {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+  pointer-events: none;
+  box-sizing: border-box;
+  border: 2px solid rgba(72, 190, 160, 0.55);
+  background: linear-gradient(
+    165deg,
+    rgba(28, 85, 72, 0.2) 0%,
+    rgba(18, 42, 38, 0.14) 45%,
+    rgba(14, 32, 30, 0.1) 100%
+  );
+  box-shadow:
+    inset 0 0 0 1px rgba(130, 230, 200, 0.12),
+    inset 0 0 100px rgba(20, 70, 58, 0.06);
 }
 
 .ruler-horizontal {
@@ -2182,6 +2156,7 @@ label {
   width: 1px;
   background: rgba(255, 255, 255, 0.06);
   pointer-events: none;
+  z-index: 1;
 }
 
 .grid-line-y {
@@ -2191,10 +2166,12 @@ label {
   height: 1px;
   background: rgba(255, 255, 255, 0.06);
   pointer-events: none;
+  z-index: 1;
 }
 
 .widget {
   position: absolute;
+  z-index: 2;
   border-radius: 4px;
   border: 1px solid #666;
   /* 线框颜色调淡一些 */
@@ -2419,119 +2396,4 @@ label {
   color: #888;
 }
 
-.resources-panel {
-  flex: 0 0 auto;
-  /* 高度由内联 style 控制，可拖动调整 */
-  border-top: 1px solid #333;
-  background: #202225;
-  padding: 6px 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  position: relative;
-  /* 让悬浮预览相对整个资源面板定位 */
-}
-
-.resources-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: 12px;
-  color: #ccc;
-}
-
-.resources-count {
-  font-size: 11px;
-  color: #888;
-}
-
-.resources-grid {
-  flex: 1;
-  overflow-x: auto;
-  display: flex;
-  gap: 8px;
-  align-items: flex-start;
-  transition: background-color 0.2s;
-}
-
-.resources-grid.drag-over {
-  background-color: rgba(14, 99, 156, 0.2);
-  border: 2px dashed #0e639c;
-}
-
-.resource-item {
-  width: 96px;
-  background: #2c2f33;
-  border-radius: 4px;
-  border: 1px solid #444;
-  padding: 4px;
-  cursor: pointer;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.resource-item:hover {
-  border-color: #4fc3f7;
-}
-
-.resource-thumb {
-  width: 100%;
-  height: 40px;
-  /* 缩小预览高度 */
-  background: #111;
-  border-radius: 3px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-}
-
-.resource-thumb img {
-  max-width: 100%;
-  max-height: 100%;
-  display: block;
-}
-
-.resource-placeholder {
-  font-size: 11px;
-  color: #777;
-}
-
-.resource-label {
-  font-size: 11px;
-  color: #ddd;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  overflow: hidden;
-}
-
-.resource-hover-preview {
-  position: absolute;
-  z-index: 20;
-  background: #1e1e1e;
-  border: 1px solid #555;
-  border-radius: 4px;
-  padding: 4px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
-  pointer-events: none;
-  /* 不抢占鼠标事件，避免触发 mouseleave 导致预览消失 */
-  transform: translateY(-100%);
-  /* 让预览窗整体出现在锚点（鼠标）上方 */
-}
-
-.resource-hover-preview img {
-  max-width: 200px;
-  max-height: 200px;
-  display: block;
-}
-
-.resource-hover-label {
-  margin-top: 2px;
-  font-size: 11px;
-  color: #ccc;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  overflow: hidden;
-}
 </style>

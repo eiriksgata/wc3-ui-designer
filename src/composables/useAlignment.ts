@@ -1,12 +1,20 @@
 import { type Ref } from 'vue';
 import type { Widget } from '../types';
+import type { Settings } from '../types';
+import { clampAllWidgetsInPlace } from './widgetCanvasBounds';
 
 export function useAlignment(
     widgetsList: Ref<Widget[]>,
     selectedIds: Ref<number[]>,
     pushHistory: () => void,
-    message: Ref<string>
+    message: Ref<string>,
+    settings: Ref<Settings>,
 ) {
+    const clampSel = () => {
+        const cw = settings.value.canvasWidth;
+        const ch = settings.value.canvasHeight;
+        clampAllWidgetsInPlace(widgetsList.value, cw, ch);
+    };
     const alignLeft = () => {
         if (selectedIds.value.length < 2) {
             message.value = '至少选中两个控件才能对齐';
@@ -19,6 +27,7 @@ export function useAlignment(
                 w.x = base.x;
             }
         });
+        clampSel();
     };
 
     const alignTop = () => {
@@ -33,6 +42,7 @@ export function useAlignment(
                 w.y = base.y;
             }
         });
+        clampSel();
     };
 
     const alignHCenter = () => {
@@ -48,6 +58,7 @@ export function useAlignment(
                 w.x = Math.round(baseCenter - w.w / 2);
             }
         });
+        clampSel();
     };
 
     const alignVCenter = () => {
@@ -63,6 +74,7 @@ export function useAlignment(
                 w.y = Math.round(baseCenter - w.h / 2);
             }
         });
+        clampSel();
     };
 
     const alignSameWidth = () => {
@@ -79,6 +91,7 @@ export function useAlignment(
                 w.w = w0;
             }
         });
+        clampSel();
     };
 
     const alignSameHeight = () => {
@@ -95,6 +108,7 @@ export function useAlignment(
                 w.h = h0;
             }
         });
+        clampSel();
     };
 
     return {

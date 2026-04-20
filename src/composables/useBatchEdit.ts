@@ -1,12 +1,16 @@
 import { ref, type Ref } from 'vue';
 import type { Widget } from '../types';
 
+import { clampAllWidgetsInPlace } from './widgetCanvasBounds';
+import type { Settings } from '../types';
+
 export function useBatchEdit(
     widgetsList: Ref<Widget[]>,
     selectedIds: Ref<number[]>,
     pushHistory: () => void,
     moveWidgetWithChildren: (rootId: number, dx: number, dy: number) => void,
-    supportsImage: (type: string) => boolean
+    supportsImage: (type: string) => boolean,
+    settings: Ref<Settings>,
 ) {
     const batchMove = ref({ dx: 0, dy: 0 });
     const batchSize = ref<{ w: number | null; h: number | null }>({ w: null, h: null });
@@ -40,6 +44,11 @@ export function useBatchEdit(
             if (w != null && !isNaN(w)) wd.w = Math.max(1, w);
             if (h != null && !isNaN(h)) wd.h = Math.max(1, h);
         });
+        clampAllWidgetsInPlace(
+            widgetsList.value,
+            settings.value.canvasWidth,
+            settings.value.canvasHeight,
+        );
     };
 
     const applyBatchText = () => {

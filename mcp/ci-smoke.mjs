@@ -17,9 +17,12 @@ const runNodeScript = (scriptPath) =>
     child.on('error', reject);
   });
 
-const verifyServerContracts = async () => {
-  const serverPath = path.resolve(process.cwd(), 'mcp/server.mjs');
-  const content = await fs.readFile(serverPath, 'utf8');
+const verifyGatewayContracts = async () => {
+  const gatewayPath = path.resolve(process.cwd(), 'mcp/http-gateway.mjs');
+  const content = await fs.readFile(gatewayPath, 'utf8');
+  if (!content.includes('StreamableHTTPServerTransport')) {
+    throw new Error('http-gateway must use StreamableHTTPServerTransport for /mcp');
+  }
   const requiredTools = [
     'ui_runtime_transaction',
     'ui_get_transaction_audit_trail',
@@ -27,8 +30,12 @@ const verifyServerContracts = async () => {
     'ui_runtime_call',
   ];
   for (const toolName of requiredTools) {
-    if (!content.includes(`'${toolName}'`)) {
-      throw new Error(`missing MCP tool contract: ${toolName}`);
+    const hasHandler =
+      content.includes(`async ${toolName}(`) ||
+      content.includes(`'${toolName}'`) ||
+      content.includes(`"${toolName}"`);
+    if (!hasHandler) {
+      throw new Error(`missing MCP HTTP tool contract: ${toolName}`);
     }
   }
 
@@ -141,8 +148,11 @@ const main = async () => {
   await runNodeScript(path.resolve(process.cwd(), 'mcp/e2e-check.mjs'));
   verdicts.push({ check: 'mcp/e2e-check', ok: true });
 
-  await verifyServerContracts();
-  verdicts.push({ check: 'mcp/server contracts', ok: true });
+  await runNodeScript(path.resolve(process.cwd(), 'mcp/streamable-smoke.mjs'));
+  verdicts.push({ check: 'mcp/streamable-smoke', ok: true });
+
+  await verifyGatewayContracts();
+  verdicts.push({ check: 'mcp/http-gateway contracts', ok: true });
 
   await verifyRuntimeExample();
   verdicts.push({ check: 'runtime transaction example', ok: true });

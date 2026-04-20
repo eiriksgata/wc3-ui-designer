@@ -1,5 +1,7 @@
 import { ref, type Ref } from 'vue';
 import type { Widget } from '../types';
+import type { Settings } from '../types';
+import { clampWidgetRect } from './widgetCanvasBounds';
 
 export function useCanvasInteraction(
     canvasRef: Ref<HTMLElement | null>,
@@ -22,7 +24,9 @@ export function useCanvasInteraction(
     gridStep: Ref<number>,
     moveWidgetWithChildren: (rootId: number, dx: number, dy: number) => void,
     pushHistory: () => void,
-    uiZoom: Ref<number>
+    uiZoom: Ref<number>,
+    clampCanvasPan: () => void,
+    settings: Ref<Settings>,
 ) {
     // 选择框性能优化：使用 requestAnimationFrame 节流
     const selectionRectRef = ref<HTMLElement | null>(null);
@@ -150,6 +154,7 @@ export function useCanvasInteraction(
             const dy = ev.clientY - panStart.value.y;
             panX.value = panStart.value.panX + dx;
             panY.value = panStart.value.panY + dy;
+            clampCanvasPan();
             ev.preventDefault();
             return;
         }
@@ -197,8 +202,13 @@ export function useCanvasInteraction(
                 newW = Math.max(10, Math.round(newW / step) * step);
                 newH = Math.max(10, Math.round(newH / step) * step);
             }
-            w.w = Math.max(1, newW);
-            w.h = Math.max(1, newH);
+            const cw = settings.value.canvasWidth;
+            const ch = settings.value.canvasHeight;
+            const c = clampWidgetRect(w.x ?? 0, w.y ?? 0, newW, newH, cw, ch);
+            w.x = c.x;
+            w.y = c.y;
+            w.w = c.w;
+            w.h = c.h;
             return;
         }
 
@@ -240,6 +250,7 @@ export function useCanvasInteraction(
     const onCanvasMouseUp = () => {
         if (isPanning.value) {
             isPanning.value = false;
+            clampCanvasPan();
             return;
         }
 

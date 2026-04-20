@@ -104,10 +104,16 @@ yarn install
 
 ### 开发模式
 
-启动网页开发服务器：
+启动网页开发服务器，并**同时**拉起 MCP HTTP 网关（默认 `127.0.0.1:8765`）与运行态桥接 HTTP（默认 `127.0.0.1:8766`），便于本地用 curl/自定义客户端调试，无需再开两个终端：
 
 ```bash
 yarn dev
+```
+
+若只需要纯前端、不需要 MCP HTTP 栈：
+
+```bash
+yarn dev:vite
 ```
 
 启动 Tauri 桌面应用开发模式（需要 Rust）：
@@ -116,81 +122,71 @@ yarn dev
 yarn tauri:dev
 ```
 
-默认情况下，桌面程序启动时会自动尝试拉起本地 MCP Server（`mcp/server.mjs`）。
+默认情况下，桌面程序启动时会自动尝试拉起 **MCP HTTP 栈**（`mcp/start-http-stack.mjs`：同时包含网关 `8765` 与运行态桥接 `8766`）。
 如需关闭自动启动，可设置环境变量：
 
 ```bash
 UI_DESIGNER_AUTO_START_MCP=false
 ```
 
-如需指定 MCP 脚本路径，可设置：
+如需指定启动脚本路径，可设置（一般无需修改）：
 
 ```bash
-UI_DESIGNER_MCP_SCRIPT_PATH=/absolute/path/to/mcp/server.mjs
+UI_DESIGNER_MCP_SCRIPT_PATH=/absolute/path/to/mcp/start-http-stack.mjs
 ```
 
-### VS Code / Copilot MCP 配置示例
+### HTTP 接口
 
-如果你想让 VS Code（含 Copilot Agent）直接连接本地 UI Designer MCP Server，可在 VS Code 的 MCP 配置文件中加入如下 JSON（路径按你本机实际修改）：
+同一进程内提供两种入口：
+
+- **MCP Streamable HTTP（推荐，VS Code / Cursor `type: "http"`）**：`http://127.0.0.1:8765/mcp`，或与 **根路径** `http://127.0.0.1:8765/` 等价（Cursor 常填无路径的 host:port）。显式子路径可通过 `UI_DESIGNER_MCP_STREAM_PATH` 修改（默认 `/mcp`）。
+- **遗留简化 RPC**：`POST http://127.0.0.1:8765/call`（`{ "tool", "arguments" }`），供脚本 / curl / 旧集成使用。
+
+### VS Code / Copilot（`type: "http"`）
+
+1. 先在本机启动：`yarn mcp:start` 或 `yarn dev`。
+2. 在 `mcp.json` 中增加（任选其一：`/` 与 `/mcp` 等价）：
 
 ```json
 {
   "servers": {
-    "ui-designer-local": {
-      "type": "stdio",
-      "command": "node",
-      "args": [
-        "D:/work/github/ui-designer/mcp/server.mjs"
-      ],
-      "env": {
-        "UI_DESIGNER_AUTO_START_MCP": "false"
-      }
+    "uiDesigner": {
+      "type": "http",
+      "url": "http://127.0.0.1:8765/"
     }
   }
 }
 ```
 
-Windows 另一种写法（使用 `yarn` 启动）：
+若 MCP 连接走 **沙箱**，请允许访问 `127.0.0.1`（或关闭该服务器的沙箱）。
 
-```json
-{
-  "servers": {
-    "ui-designer-local": {
-      "type": "stdio",
-      "command": "yarn",
-      "args": [
-        "--cwd",
-        "D:/work/github/ui-designer",
-        "mcp:start"
-      ]
-    }
-  }
-}
+**Cursor 连接失败、日志里出现 `diagnostics":["not found"]` 且协议为 `http-gateway`：** 说明请求打到了非 MCP 路由；请把 URL 设为 `http://127.0.0.1:8765/` 或 `http://127.0.0.1:8765/mcp`（不要只填端口却指向别的路径），并 **更新依赖后重启** `yarn dev`。
+
+`yarn dev` 已包含网关与运行态桥接；若你使用 `yarn dev:vite` 或需要与桌面端相同的「一键双进程」，可执行：
+
+```bash
+yarn mcp:start
 ```
 
-建议：
-
-- 优先使用 `node + 绝对脚本路径`，路径最稳定。
-- 若你已经通过桌面程序自动启动了 MCP，可避免在 VS Code 侧重复起服务。
-- 如果 Copilot 看不到工具，先检查 Node 路径、脚本路径和 VS Code MCP 配置文件是否生效。
-
-### HTTP 模式（本地服务）
-
-如果你更偏好 HTTP 方式，可以启动本地网关：
+或分别启动：
 
 ```bash
 yarn mcp:start:http
 yarn mcp:start:runtime-bridge-http
 ```
 
-默认监听 `http://127.0.0.1:8765`，提供：
+默认监听：
 
-- `GET /health`
-- `POST /call`（body 示例：`{ "tool": "ui_get_snapshot", "arguments": {} }`）
+- **网关**：`http://127.0.0.1:8765` — `GET /health`、MCP **`/`** 与 **`/mcp`**（Streamable HTTP，等价）、`POST /call`（遗留）
+- **运行态桥接**：`http://127.0.0.1:8766` — 供网关将运行态调用转发到已打开的设计器 UI
 
-运行态桥接 HTTP（可选）默认监听 `http://127.0.0.1:8766`，用于把运行态方法请求从 HTTP 转发到 UI 桥接。
+`POST /call` 请求体示例：
 
-示例请求：
+```json
+{ "tool": "ui_get_snapshot", "arguments": {} }
+```
+
+命令行示例：
 
 ```bash
 curl -X POST "http://127.0.0.1:8765/call" ^
@@ -198,9 +194,12 @@ curl -X POST "http://127.0.0.1:8765/call" ^
   -d "{\"tool\":\"ui_validate\",\"arguments\":{}}"
 ```
 
-说明：现在支持“HTTP 优先 + 队列回退”：
-- MCP Server / HTTP 网关优先请求运行态桥接 HTTP（8766）
-- 若运行态桥接 HTTP 不可用，自动回退到 `mcp-runtime` 队列
+说明：**HTTP 优先 + 队列回退**
+
+- HTTP 网关优先请求运行态桥接 HTTP（8766）
+- 若运行态桥接 HTTP 不可用，自动回退到 `mcp-runtime` 文件队列
+
+外部 Agent（如地图模板脚本）请直接 `fetch`/`curl` 网关，或参考 `integrations/wc3-map-ts-template`。
 
 ### 构建
 

@@ -1,0 +1,260 @@
+/**
+ * 应用壳层设计 Token 与主题覆盖（与 Vuetify theme 配合；避免在 App.vue 内堆样式）
+ */
+
+.app-layout {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    --panel-bg: linear-gradient(180deg, #2a2d34 0%, #24272e 100%);
+    --panel-border: rgba(255, 255, 255, 0.08);
+    --surface-bg: #1e1e1e;
+    --menu-msg-color: #c5d0e4;
+}
+
+.app-layout.appLight {
+    color: #1f2430;
+    --panel-bg: linear-gradient(180deg, #f6f8fc 0%, #eef2f9 100%);
+    --panel-border: #d3dae6;
+    --surface-bg: #edf1f8;
+    --menu-msg-color: #4a5d80;
+}
+
+.app-layout.appLight .left,
+.app-layout.appLight .right {
+    background: #f6f8fc;
+    border-color: #d3dae6;
+}
+
+.app-layout.appLight .center {
+    background: #edf1f8;
+}
+
+.app-layout.appLight .menubar,
+.app-layout.appLight .toolbar {
+    background: #e8edf6;
+    border-color: #cfd8e6;
+}
+
+.app-layout.appLight .menu,
+.app-layout.appLight .menubar-msg,
+.app-layout.appLight .hint,
+.app-layout.appLight h3,
+.app-layout.appLight label {
+    color: #2a3140;
+}
+
+.app-layout.appLight button:not(.v-btn) {
+    border-color: #c0cada;
+    background: #f7f9fd;
+    color: #223049;
+}
+
+.app-layout.appLight button:not(.v-btn):hover {
+    background: #eef3fb;
+}
+
+.app-layout.appLight input[type='text']:not(.v-field__input),
+.app-layout.appLight input[type='number']:not(.v-field__input),
+.app-layout.appLight select:not(.v-field__input),
+.app-layout.appLight textarea:not(.v-field__input),
+.app-layout.appLight .parent-display {
+    border-color: #c0cada;
+    background: #ffffff;
+    color: #243247;
+}
+
+.app-layout.appLight .canvas {
+    border-color: #ccd5e4;
+    background: #e8edf4;
+}
+
+/* 浅色主题：可编辑画布区域提示 */
+.app-layout.appLight .canvas-inner-hint {
+    border-color: rgba(46, 150, 125, 0.5);
+    background: linear-gradient(
+        165deg,
+        rgba(200, 235, 225, 0.42) 0%,
+        rgba(218, 236, 230, 0.28) 50%,
+        rgba(228, 240, 236, 0.2) 100%
+    );
+    box-shadow:
+        inset 0 0 0 1px rgba(70, 160, 135, 0.22),
+        inset 0 0 90px rgba(60, 140, 120, 0.06);
+}
+
+.app-layout.appLight :deep(.v-card) {
+    border-color: #d3dceb !important;
+    box-shadow: 0 10px 30px rgba(26, 43, 77, 0.12);
+}
+
+.app-layout.appLight :deep(.v-field) {
+    background: #fff;
+}
+
+.app-layout.appLight :deep(.v-list) {
+    background: #fff;
+}
+
+.app-layout.appLight :deep(.v-btn.v-btn--variant-text) {
+    color: #31415f;
+}
+
+/* ---------- 浅色主题：修正仍沿用深色样式的文字（避免白字/浅灰字贴在浅底上） ---------- */
+
+.app-layout.appLight .left,
+.app-layout.appLight .right {
+    color: #243247;
+}
+
+.app-layout.appLight .hierarchy-panel {
+    border-top-color: #d0d8e6;
+}
+
+.app-layout.appLight .tree-item {
+    color: #2c3a52;
+}
+
+.app-layout.appLight .tree-item:hover {
+    background: #e8eef8;
+}
+
+.app-layout.appLight .tree-item.selected {
+    color: #fff;
+}
+
+.app-layout.appLight .prop-section-title {
+    color: #1e3a5f;
+    border-top-color: #d0d8e6;
+}
+
+.app-layout.appLight .prop-subtitle {
+    color: #31415f;
+}
+
+.app-layout.appLight .prop-group .hint-text {
+    color: #5a6b85;
+}
+
+.app-layout.appLight .prop-tabs {
+    border-bottom-color: #d0d8e6;
+}
+
+.app-layout.appLight .prop-tab {
+    color: #4a5d80;
+}
+
+.app-layout.appLight .prop-tab.active {
+    color: #1565c0;
+    border-bottom-color: #1976d2;
+}
+
+.app-layout.appLight .animation-card {
+    border-color: #c9d4e8;
+    background: #ffffff;
+}
+
+.app-layout.appLight .animation-card-header {
+    background: #eef2f9;
+}
+
+.app-layout.appLight .animation-title {
+    color: #243247;
+}
+
+.app-layout.appLight .animation-summary {
+    color: #5a6b85;
+}
+
+/* 顶部菜单栏（TopMenuBar scoped 类名仍作用于 DOM） */
+.app-layout.appLight .menubar {
+    background: linear-gradient(180deg, #eef2f9 0%, #e8edf6 100%);
+    border-bottom-color: #cfd8e6;
+}
+
+.app-layout.appLight .menu-activator {
+    color: #31415f !important;
+}
+
+.app-layout.appLight .menubar-msg {
+    color: #5a6b85 !important;
+}
+
+.app-layout.appLight .menu-list {
+    border-color: #d0d8e6;
+}
+
+/* Vuetify：属性页签 / 列表项文字 */
+.app-layout.appLight :deep(.v-tab) {
+    color: #4a5d80 !important;
+}
+
+.app-layout.appLight :deep(.v-tab--selected) {
+    color: #1565c0 !important;
+}
+
+.app-layout.appLight :deep(.v-list-item-title) {
+    color: #243247;
+}
+
+.app-layout.appLight :deep(.v-list-item-subtitle) {
+    color: #5a6b85;
+}
+
+.app-layout.appLight :deep(.v-field input),
+.app-layout.appLight :deep(.v-field textarea) {
+    color: #243247 !important;
+}
+
+.app-layout.appLight :deep(.v-label) {
+    color: #4a5d80 !important;
+}
+
+.app-layout.appLight :deep(.v-selection-control .v-label) {
+    color: #31415f !important;
+}
+
+/* PropertiesPanel 空状态 / 快捷提示（scoped 子组件） */
+.app-layout.appLight .empty-tip,
+.app-layout.appLight .empty-tip-title {
+    color: #5a6b85;
+}
+
+.app-layout.appLight .shortcuts-title {
+    color: #7a8aa3;
+}
+
+.app-layout.appLight .shortcut-hint-item {
+    background: #ffffff;
+    border-color: #d0d8e6;
+}
+
+.app-layout.appLight .shortcut-hint-desc {
+    color: #243247;
+}
+
+.app-layout.appLight .shortcut-hint-key {
+    color: #5a6b85;
+}
+
+/* 资源管理器浅色由 ResourcesPanel 根类 resources-panel--light 控制（见该组件） */
+
+.app-layout.appLight .context-menu {
+    background: #ffffff;
+    border-color: #d0d8e6;
+    box-shadow:
+        0 4px 12px rgba(26, 43, 77, 0.08),
+        0 12px 32px rgba(26, 43, 77, 0.12);
+}
+
+.app-layout.appLight .context-menu button:not(.v-btn) {
+    color: #1e2a3d;
+}
+
+.app-layout.appLight .context-menu button:not(.v-btn):hover:not(:disabled) {
+    background: #eef2f9;
+}
+
+.app-layout.appLight .context-menu hr {
+    border-top-color: #e2e8f2;
+}

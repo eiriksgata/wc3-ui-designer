@@ -206,7 +206,10 @@
                         density="compact"
                         variant="outlined"
                         hide-details
-                        title="控件在画布上的 X 坐标"
+                        min="0"
+                        :max="maxLayoutX"
+                        title="控件在画布上的 X 坐标（0 起算，不超过画布）"
+                        @blur="emit('clamp-widgets')"
                     />
 
                     <label for="widget-y">位置 Y</label>
@@ -217,7 +220,10 @@
                         density="compact"
                         variant="outlined"
                         hide-details
-                        title="控件在画布上的 Y 坐标"
+                        min="0"
+                        :max="maxLayoutY"
+                        title="控件在画布上的 Y 坐标（0 起算，不超过画布）"
+                        @blur="emit('clamp-widgets')"
                     />
 
                     <label for="widget-w">宽度</label>
@@ -228,7 +234,10 @@
                         density="compact"
                         variant="outlined"
                         hide-details
-                        title="控件的宽度"
+                        min="1"
+                        :max="maxLayoutW"
+                        title="控件的宽度（右下不超过画布）"
+                        @blur="emit('clamp-widgets')"
                     />
 
                     <label for="widget-h">高度</label>
@@ -239,7 +248,10 @@
                         density="compact"
                         variant="outlined"
                         hide-details
-                        title="控件的高度"
+                        min="1"
+                        :max="maxLayoutH"
+                        title="控件的高度（右下不超过画布）"
+                        @blur="emit('clamp-widgets')"
                     />
                 </div>
 
@@ -560,6 +572,9 @@ import { computed } from 'vue';
 
 const props = defineProps({
     rightWidth: { type: Number, default: 260 },
+    /** 画布逻辑宽高（控件必须完全落在此范围内） */
+    canvasWidth: { type: Number, default: 800 },
+    canvasHeight: { type: Number, default: 600 },
     selectedWidget: { type: Object, default: null },
     selectedIds: { type: Array, default: () => [] },
     allWidgetTypes: { type: Array, default: () => [] },
@@ -577,7 +592,8 @@ const props = defineProps({
     supportsImage: { type: Function, required: true },
 });
 
-defineEmits([
+const emit = defineEmits([
+    'clamp-widgets',
     'update:activePropertyTab',
     'toggleAnimationCard',
     'previewAnimation',
@@ -591,6 +607,27 @@ defineEmits([
     'update:batchText',
     'update:batchImage',
 ]);
+
+const maxLayoutX = computed(() => {
+    const w = props.selectedWidget as { w?: number } | null;
+    if (!w) return props.canvasWidth;
+    return Math.max(0, props.canvasWidth - (w.w ?? 0));
+});
+const maxLayoutY = computed(() => {
+    const w = props.selectedWidget as { h?: number } | null;
+    if (!w) return props.canvasHeight;
+    return Math.max(0, props.canvasHeight - (w.h ?? 0));
+});
+const maxLayoutW = computed(() => {
+    const w = props.selectedWidget as { x?: number } | null;
+    if (!w) return props.canvasWidth;
+    return Math.max(1, props.canvasWidth - (w.x ?? 0));
+});
+const maxLayoutH = computed(() => {
+    const w = props.selectedWidget as { y?: number } | null;
+    if (!w) return props.canvasHeight;
+    return Math.max(1, props.canvasHeight - (w.y ?? 0));
+});
 
 const widgetTypeItems = computed(() =>
     props.allWidgetTypes.map((t) => ({

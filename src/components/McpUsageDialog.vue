@@ -15,7 +15,13 @@
 
       <v-card-text class="mcp-usage-content">
         <section class="mcp-section">
-          <h3>0) 一键填写 VS Code MCP 配置</h3>
+          <h3>0) VS Code / Copilot（MCP Streamable HTTP）</h3>
+          <p class="tip">
+            网关在同一端口提供 <strong>MCP Streamable HTTP</strong>（<code>/</code> 与
+            <code>/mcp</code> 等价，Cursor 填无路径的 <code>http://127.0.0.1:8765</code> 亦可）。请先
+            <code>yarn mcp:start</code> 或 <code>yarn dev</code>，再写入 <code>mcp.json</code>。遗留脚本仍可用
+            <code>POST /call</code>。
+          </p>
           <div class="form-grid">
             <div>
               <label for="mcp-server-id">Server ID</label>
@@ -25,38 +31,25 @@
                 density="compact"
                 variant="outlined"
                 hide-details
-                placeholder="ui-designer-local"
-              />
-            </div>
-            <div>
-              <label for="mcp-command">启动命令</label>
-              <v-text-field
-                id="mcp-command"
-                v-model="mcpConfig.command"
-                density="compact"
-                variant="outlined"
-                hide-details
-                placeholder="node"
+                placeholder="uiDesigner"
               />
             </div>
             <div class="full">
-              <label for="mcp-arg1">参数（每行一个）</label>
-              <v-textarea
-                id="mcp-arg1"
-                v-model="argsText"
+              <label for="mcp-stream-url">Streamable HTTP URL（推荐带 / 或 /mcp）</label>
+              <v-text-field
+                id="mcp-stream-url"
+                v-model="mcpConfig.streamUrl"
                 density="compact"
                 variant="outlined"
                 hide-details
-                rows="3"
-                placeholder="D:/work/github/ui-designer/mcp/server.mjs"
+                placeholder="http://127.0.0.1:8765/"
               />
             </div>
           </div>
-          <p class="tip">复制下面 JSON 到 VS Code 的 MCP 配置文件即可。</p>
+          <p class="tip">复制到 VS Code：<code>.vscode/mcp.json</code> 或用户级 MCP 配置。</p>
           <pre class="json-example">{{ vscodeMcpJson }}</pre>
           <div class="actions-row">
-            <v-btn size="small" variant="outlined" color="secondary" @click="applyNodePreset">Node 预设</v-btn>
-            <v-btn size="small" variant="outlined" color="secondary" @click="applyYarnPreset">Yarn 预设</v-btn>
+            <v-btn size="small" variant="outlined" color="secondary" @click="applyDefaultPreset">默认 URL 预设</v-btn>
             <v-btn size="small" variant="flat" color="primary" @click="copyVscodeJson">复制 VS Code JSON</v-btn>
           </div>
           <p v-if="copyMessage" class="tip">{{ copyMessage }}</p>
@@ -134,43 +127,26 @@ const onDialogModelUpdate = (value: boolean) => {
 };
 
 const mcpConfig = ref({
-  serverId: 'ui-designer-local',
-  command: 'node',
-  args: ['D:/work/github/ui-designer/mcp/server.mjs'],
+  serverId: 'uiDesigner',
+  streamUrl: 'http://127.0.0.1:8765/',
 });
 
-const argsText = ref(mcpConfig.value.args.join('\n'));
 const copyMessage = ref('');
-
-const parsedArgs = computed(() =>
-  argsText.value
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean),
-);
 
 const vscodeMcpJsonObject = computed(() => ({
   servers: {
-    [mcpConfig.value.serverId || 'ui-designer-local']: {
-      type: 'stdio',
-      command: mcpConfig.value.command || 'node',
-      args: parsedArgs.value,
+    [mcpConfig.value.serverId || 'uiDesigner']: {
+      type: 'http',
+      url: mcpConfig.value.streamUrl || 'http://127.0.0.1:8765/',
     },
   },
 }));
 
 const vscodeMcpJson = computed(() => JSON.stringify(vscodeMcpJsonObject.value, null, 2));
 
-const applyNodePreset = () => {
-  mcpConfig.value.serverId = 'ui-designer-local';
-  mcpConfig.value.command = 'node';
-  argsText.value = 'D:/work/github/ui-designer/mcp/server.mjs';
-};
-
-const applyYarnPreset = () => {
-  mcpConfig.value.serverId = 'ui-designer-local';
-  mcpConfig.value.command = 'yarn';
-  argsText.value = ['--cwd', 'D:/work/github/ui-designer', 'mcp:start'].join('\n');
+const applyDefaultPreset = () => {
+  mcpConfig.value.serverId = 'uiDesigner';
+  mcpConfig.value.streamUrl = 'http://127.0.0.1:8765/';
 };
 
 const copyVscodeJson = async () => {

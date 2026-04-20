@@ -12,44 +12,56 @@ export function useRuler(
     const canvasLogicalWidth = computed(() => settings.value.canvasWidth);
     const canvasLogicalHeight = computed(() => settings.value.canvasHeight);
 
-    // 计算水平标尺可见的刻度范围
+    // 计算水平标尺可见的刻度范围（仅 [0, canvasWidth]，与画布内容一致；不出现画布外的负坐标）
     const rulerXTicks = computed(() => {
         if (!canvasSize.value || !canvasSize.value.width || canvasScale.value === 0) return [];
 
-        // 计算可见区域对应的世界坐标范围
         const scale = canvasScale.value || 1;
         const rulerStartX = -panX.value / scale;
         const rulerEndX = (canvasSize.value.width - 26 - panX.value) / scale;
 
-        // 计算需要显示的刻度范围（扩展一些范围以确保完整显示）
+        const canvasW = canvasLogicalWidth.value;
         const step = rulerStep.value || 50;
-        const startTick = Math.floor(rulerStartX / step) * step - step;
-        const endTick = Math.ceil(rulerEndX / step) * step + step;
+
+        const drawStart = Math.max(0, rulerStartX);
+        const drawEnd = Math.min(canvasW, rulerEndX);
+        if (drawStart > drawEnd) return [];
+
+        const startTick = Math.floor(drawStart / step) * step;
+        const endTick = Math.ceil(drawEnd / step) * step;
 
         const ticks: number[] = [];
         for (let x = startTick; x <= endTick; x += step) {
-            ticks.push(x);
+            if (x >= 0 && x <= canvasW) {
+                ticks.push(x);
+            }
         }
         return ticks;
     });
 
-    // 计算垂直标尺可见的刻度范围
+    // 垂直标尺：仅 [0, canvasHeight]
     const rulerYTicks = computed(() => {
         if (!canvasSize.value || !canvasSize.value.height || canvasScale.value === 0) return [];
 
-        // 计算可见区域对应的世界坐标范围
         const scale = canvasScale.value || 1;
         const rulerStartY = -panY.value / scale;
         const rulerEndY = (canvasSize.value.height - 20 - panY.value) / scale;
 
-        // 计算需要显示的刻度范围（扩展一些范围以确保完整显示）
+        const canvasH = canvasLogicalHeight.value;
         const step = rulerStep.value || 50;
-        const startTick = Math.floor(rulerStartY / step) * step - step;
-        const endTick = Math.ceil(rulerEndY / step) * step + step;
+
+        const drawStart = Math.max(0, rulerStartY);
+        const drawEnd = Math.min(canvasH, rulerEndY);
+        if (drawStart > drawEnd) return [];
+
+        const startTick = Math.floor(drawStart / step) * step;
+        const endTick = Math.ceil(drawEnd / step) * step;
 
         const ticks: number[] = [];
         for (let y = startTick; y <= endTick; y += step) {
-            ticks.push(y);
+            if (y >= 0 && y <= canvasH) {
+                ticks.push(y);
+            }
         }
         return ticks;
     });

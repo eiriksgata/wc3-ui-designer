@@ -1,5 +1,6 @@
 <template>
-    <div class="resources-panel" :style="{ height: height + 'px' }" ref="panelRef">
+    <div class="resources-panel" :class="{ 'resources-panel--light': themeName === 'appLight' }"
+        :style="{ height: height + 'px' }" ref="panelRef">
         <div class="resources-header">
             <span>资源管理器</span>
             <span class="resources-count">共 {{ imageResources.length }} 项</span>
@@ -52,6 +53,8 @@ const props = defineProps({
     imageResources: { type: Array, default: () => [] },
     isResourcesDragOver: { type: Boolean, default: false },
     hoverPreview: { type: Object, default: () => ({ visible: false }) },
+    /** 与 App 根主题同步；用于 scoped 内浅色样式，避免依赖 :global(.app-layout.appLight) 选择器链 */
+    themeName: { type: String, default: 'appDark' },
 });
 
 const panelRef = defineModel('panelRef');
@@ -83,8 +86,8 @@ const onResourceMouseLeave = (e) => emit('hover-leave', e);
 <style scoped>
 .resources-panel {
     flex: 0 0 auto;
-    border-top: 1px solid rgba(255, 255, 255, 0.08);
-    background: linear-gradient(180deg, #232730 0%, #1f232c 100%);
+    border-top: 1px solid var(--panel-border, rgba(255, 255, 255, 0.08));
+    background: var(--panel-bg, linear-gradient(180deg, #232730 0%, #1f232c 100%));
     padding: 8px 10px;
     display: flex;
     flex-direction: column;
@@ -203,30 +206,74 @@ const onResourceMouseLeave = (e) => emit('hover-leave', e);
     color: #c8d5ef;
 }
 
-:global(.app-layout.appLight) .resources-panel {
-    border-top: 1px solid #d0d8e6;
-    background: linear-gradient(180deg, #eef2f9 0%, #e8edf6 100%);
+.resource-item.import-item .resource-thumb {
+    background: linear-gradient(145deg, #1a1d24 0%, #14161c 100%);
+    border: 1px dashed rgba(100, 162, 255, 0.35);
 }
 
-:global(.app-layout.appLight) .resources-header {
-    color: #2c3c57;
+.resource-item.import-item:hover .resource-thumb {
+    border-color: rgba(100, 162, 255, 0.55);
 }
 
-:global(.app-layout.appLight) .resources-count {
-    color: #657897;
+/* 浅色：挂在根节点 modifiers 上，scoped 选择器特异性稳定，「导入资源」等标签可读 */
+.resources-panel--light {
+    border-top: 1px solid var(--panel-border, #d0d8e6);
+    background: var(--panel-bg, linear-gradient(180deg, #eef2f9 0%, #e8edf6 100%));
+    color: #243247;
 }
 
-:global(.app-layout.appLight) .resource-item {
+.resources-panel--light .resources-header {
+    color: #1a2433;
+}
+
+.resources-panel--light .resources-count {
+    color: #5a6b85;
+}
+
+.resources-panel--light .resource-item {
     background: #ffffff;
     border-color: #ccd7e8;
 }
 
-:global(.app-layout.appLight) .resource-item:hover {
+.resources-panel--light .resource-item:hover {
     border-color: #3b7cff;
     background: #f5f8ff;
 }
 
-:global(.app-layout.appLight) .resource-label {
+.resources-panel--light .resource-label {
+    color: #0f172a;
+}
+
+.resources-panel--light .resource-item.import-item .resource-thumb {
+    background: linear-gradient(180deg, #f4f7fc 0%, #eef2f9 100%);
+    border: 1px dashed #a8b8d4;
+}
+
+.resources-panel--light .resource-item.import-item:hover .resource-thumb {
+    border-color: #3b7cff;
+    background: linear-gradient(180deg, #f0f5ff 0%, #e8f0ff 100%);
+}
+
+.resources-panel--light .resource-item.import-item .import-thumb {
+    color: #2d6ae0;
+}
+
+.resources-panel--light .resources-grid.drag-over {
+    background-color: rgba(43, 125, 255, 0.1);
+    border-color: #3b7cff;
+}
+
+.resources-panel--light .resource-placeholder {
+    color: #8899b3;
+}
+
+.resources-panel--light .resource-hover-preview {
+    background: #ffffff;
+    border-color: #d0d8e6;
+    box-shadow: 0 8px 24px rgba(26, 43, 77, 0.12);
+}
+
+.resources-panel--light .resource-hover-label {
     color: #2d3c58;
 }
 </style>

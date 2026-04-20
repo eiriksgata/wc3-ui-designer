@@ -1,11 +1,18 @@
 import { ref, type Ref } from 'vue';
+import { clampCanvasSize } from '../constants/wc3CanvasLimits';
 import type { Settings } from '../types';
+
+function applyCanvasClamp(s: Settings): void {
+    const { width, height } = clampCanvasSize(s.canvasWidth, s.canvasHeight);
+    s.canvasWidth = width;
+    s.canvasHeight = height;
+}
 
 export function useSettings() {
     const showSettings = ref(false);
     const settings: Ref<Settings> = ref({
-        canvasWidth: 1920,
-        canvasHeight: 1080,
+        canvasWidth: 800,
+        canvasHeight: 600,
         rulerStep: 50,
         gridSnapStep: 10,
         autoSave: false,
@@ -28,8 +35,8 @@ export function useSettings() {
 
     const resetSettings = () => {
         settings.value = {
-            canvasWidth: 1920,
-            canvasHeight: 1080,
+            canvasWidth: 800,
+            canvasHeight: 600,
             rulerStep: 50,
             gridSnapStep: 10,
             autoSave: false,
@@ -37,6 +44,7 @@ export function useSettings() {
             canvasBgColor: '#1a1a1a',
             canvasBgImage: '',
         };
+        applyCanvasClamp(settings.value);
     };
 
     const loadSettings = () => {
@@ -46,6 +54,7 @@ export function useSettings() {
                 const saved = JSON.parse(raw) as Partial<Settings>;
                 if (saved) {
                     settings.value = { ...settings.value, ...saved };
+                    applyCanvasClamp(settings.value);
                 }
             }
         } catch (e) {

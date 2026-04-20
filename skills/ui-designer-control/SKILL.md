@@ -4,6 +4,15 @@
 
 让模板 Agent 通过 MCP 稳定控制 `ui-designer`，把自然语言需求转成可执行动作，并在导出前完成校验。
 
+连接方式：优先使用本地 **MCP Streamable HTTP**（`http://127.0.0.1:8765/mcp` 与根 **`http://127.0.0.1:8765/`** 等价，适配 Cursor）；自动化脚本仍可用遗留 `POST /call`。
+
+## 运行方式（硬性要求）
+
+被自动化控制的 **ui-designer 进程必须是 Tauri 桌面端**，不要用仅浏览器的 `yarn dev` 作为 MCP 目标：Web 模式缺少或与桌面不一致的能力较多（原生文件/对话框、部分集成路径等），会导致工具调用「成功」但与真实使用场景不符。
+
+- 启动：**`yarn tauri:dev`**（默认会尝试自动拉起 MCP HTTP 栈；若关闭自动启动，需另开 `yarn mcp:start`，见仓库 `README.md`）。
+- 不要向用户或脚本暗示「开浏览器开发者站即可等同完整功能」；完整流程校验一律以桌面端为准。
+
 ## Required Workflow
 
 1. `ui_open_project`

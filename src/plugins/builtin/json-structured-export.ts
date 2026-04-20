@@ -1,5 +1,9 @@
 import type { ExportPluginModule, ExportContext } from '../../types/plugin';
 import type { Widget } from '../../types';
+import {
+    WC3_FRAME_UI_NORM_HEIGHT,
+    WC3_FRAME_UI_NORM_WIDTH,
+} from '../../constants/wc3CanvasLimits';
 
 type WidgetTreeNode = Widget & {
     children: WidgetTreeNode[];
@@ -60,6 +64,16 @@ function exportFunction(context: ExportContext): string {
         settings: {
             canvasWidth: settings.canvasWidth,
             canvasHeight: settings.canvasHeight,
+        },
+        wc3FrameUi: {
+            /** BlzFrameSetAbsPoint 等使用的 4:3 UI 平面归一化范围（左下为原点时的跨度） */
+            normalizedExtent: {
+                xMax: WC3_FRAME_UI_NORM_WIDTH,
+                yMax: WC3_FRAME_UI_NORM_HEIGHT,
+            },
+            /** 设计器像素与归一化：normX = (px / canvasWidth) * xMax，normY 同理（接原生 API 时可能需 Y 翻转） */
+            pixelToNormNote:
+                'px / canvasWidth * 0.8, py / canvasHeight * 0.6',
         },
         resources: imageResources.filter((resource) => usedResourceValues.has(resource.value)),
         widgets: {

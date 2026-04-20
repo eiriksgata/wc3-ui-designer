@@ -6,7 +6,7 @@ This repository is a visual UI designer for Warcraft III Frame UI, built with Vu
 
 - Project: `frame-ui-designer` (`package.json` name).
 - Goal: visually design UI layouts/widgets and export structured output (Lua, TypeScript, JSON via export plugins).
-- Stack: Vue 3 (Composition API), TypeScript, Vite, Tauri 2, MCP SDK (Node scripts).
+- Stack: Vue 3 (Composition API), TypeScript, Vite, Tauri 2, Node MCP (Streamable HTTP + legacy `POST /call`).
 - Package manager: Yarn.
 
 ## Project Structure
@@ -26,16 +26,26 @@ This repository is a visual UI designer for Warcraft III Frame UI, built with Vu
 
 Use only scripts defined in `package.json`:
 
-- `yarn dev`: start Vite dev server.
+- `yarn dev`: start Vite plus MCP HTTP gateway (`8765`) and runtime bridge HTTP (`8766`) via `concurrently`.
+- `yarn dev:vite`: start Vite only (no MCP HTTP processes).
 - `yarn build`: build web app to `dist/`.
 - `yarn preview`: preview built web app.
 - `yarn type-check`: run `vue-tsc --noEmit`.
 - `yarn tauri:dev`: run Tauri app in development mode.
 - `yarn tauri:build`: build desktop installer/bundle.
-- `yarn mcp:start`: start MCP server script.
+- `yarn mcp:start`: start MCP HTTP stack (`http-gateway` + `runtime-bridge-http`). Gateway exposes MCP Streamable HTTP at `http://127.0.0.1:8765/mcp` and **same behavior at** `http://127.0.0.1:8765/` (for Cursor base-URL); `UI_DESIGNER_MCP_STREAM_PATH` changes the `/mcp` path only; legacy `POST /call` remains.
 - `yarn mcp:e2e`: run MCP end-to-end checks.
+- `yarn mcp:streamable-smoke`: verify Streamable HTTP `/mcp` lists tools via MCP client.
 - `yarn mcp:ci-smoke`: run CI-oriented MCP smoke checks.
 - `yarn mcp:ci-smoke:strict-runtime`: run smoke checks with live runtime bridge probe.
+
+## Agent And MCP Runtime (Tauri Required)
+
+When an agent **controls the app via MCP**, **verifies full product behavior**, or **tells a user how to run the designer for AI-driven workflows**, assume the **Tauri desktop** runtime only:
+
+- Use **`yarn tauri:dev`** (not `yarn dev` / browser-only Vite) as the UI process under automation. Native filesystem, dialogs, and other Tauri-only paths are missing or incomplete in pure web mode, so browser dev is an invalid target for end-to-end MCP or “does it work” checks.
+- The Tauri app **auto-starts the MCP HTTP stack** by default (see `README.md`); if it is disabled, start `yarn mcp:start` separately so Streamable HTTP and the runtime bridge stay available.
+- `yarn dev` remains acceptable for **frontend-only** iteration and scripts that do not rely on Tauri features; do **not** present it as equivalent to the desktop for automation or full-capability testing.
 
 ## Frontend Architecture Rules
 
@@ -63,7 +73,7 @@ Use only scripts defined in `package.json`:
 
 ## MCP Script Rules
 
-- `mcp/server.mjs` and related scripts should stay runnable with plain Node.
+- `mcp/http-gateway.mjs`, `mcp/runtime-bridge-http.mjs`, and `mcp/start-http-stack.mjs` must stay runnable with plain Node (`http-gateway` depends on `@modelcontextprotocol/sdk` for Streamable HTTP).
 - Validate any MCP protocol changes with `yarn mcp:e2e`.
 - For CI readiness of MCP runtime contracts, run `yarn mcp:ci-smoke`.
 - If a CI worker can run the UI process, prefer `yarn mcp:ci-smoke:strict-runtime`.
@@ -83,8 +93,8 @@ For frontend/composable edits:
 
 1. Run `yarn type-check`.
 2. If relevant, run `yarn build`.
-3. If touching desktop integration, run `yarn tauri:dev` (or at least confirm config consistency).
-4. If touching MCP scripts, run `yarn mcp:e2e`.
+3. If touching desktop integration, MCP, or anything that depends on Tauri-only behavior, run **`yarn tauri:dev`** and verify there (browser-only `yarn dev` is insufficient for those paths).
+4. If touching MCP scripts, run `yarn mcp:ci-smoke` (includes e2e, Streamable smoke, and contract checks).
 
 If local environment lacks Rust or desktop prerequisites, still ensure web/type-check path passes and clearly report what could not be executed.
 

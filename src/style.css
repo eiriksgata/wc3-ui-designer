@@ -1,3 +1,5 @@
+/* 应用壳层主题变量与浅色覆盖见 theme.css（在 main.ts 中于本文件之后引入） */
+
 * {
     box-sizing: border-box;
     margin: 0;

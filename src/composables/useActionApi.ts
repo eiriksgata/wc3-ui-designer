@@ -12,6 +12,7 @@ interface ActionApiDeps {
     nextId: Ref<number>;
     addWidgetWithHistory: (type: string) => void;
     deleteSelectedWithHistory: () => void;
+    clampAllWidgets: () => void;
     pushHistory: () => void;
     undoLayout: () => void;
     redoLayout: () => void;
@@ -38,6 +39,7 @@ export function useActionApi(deps: ActionApiDeps) {
         deps.settings.value = clone(snapshot.settings || deps.settings.value);
         const maxId = deps.widgetsList.value.reduce((max, widget) => Math.max(max, widget.id || 0), 0);
         deps.nextId.value = maxId + 1;
+        deps.clampAllWidgets();
     };
 
     const listWidgets = (): Widget[] => clone(deps.widgetsList.value);
@@ -52,6 +54,7 @@ export function useActionApi(deps: ActionApiDeps) {
             if (created && action.payload.overrides) {
                 Object.assign(created, action.payload.overrides);
             }
+            deps.clampAllWidgets();
             return null;
         }
 
@@ -60,6 +63,7 @@ export function useActionApi(deps: ActionApiDeps) {
             if (!target) return `控件不存在: ${action.targetId}`;
             deps.pushHistory();
             Object.assign(target, action.payload);
+            deps.clampAllWidgets();
             return null;
         }
 

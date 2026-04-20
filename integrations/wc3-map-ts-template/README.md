@@ -39,25 +39,20 @@ curl -X POST "http://127.0.0.1:8765/call" ^
 
 该桥接使用本地目录 `mcp-runtime` 作为请求/响应队列。
 
-### VS Code MCP 配置（可复制）
+### VS Code MCP 配置（Streamable HTTP）
 
-如需在 `wc3-map-ts-template` 开发时让 Copilot 直接调用 UI Designer MCP，可使用以下配置：
+先在本机 `yarn mcp:start` 或 `yarn dev`，再在 `mcp.json` 中使用：
 
 ```json
 {
   "servers": {
-    "ui-designer-local": {
-      "type": "stdio",
-      "command": "node",
-      "args": [
-        "D:/work/github/ui-designer/mcp/server.mjs"
-      ]
+    "uiDesigner": {
+      "type": "http",
+      "url": "http://127.0.0.1:8765/"
     }
   }
 }
 ```
-
-建议把 `D:/work/github/ui-designer/mcp/server.mjs` 换成你机器上的绝对路径。
 
 可直接参考示例脚本（事务+失败回滚）：
 

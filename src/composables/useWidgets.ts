@@ -1,7 +1,9 @@
-import { ref, computed, type Ref } from 'vue';
+import { ref, computed, watch, type Ref } from 'vue';
 import type { Widget } from '../types';
+import type { Settings } from '../types';
+import { clampAllWidgetsInPlace } from './widgetCanvasBounds';
 
-export function useWidgets() {
+export function useWidgets(settings: Ref<Settings>) {
     const widgets: Ref<Widget[]> = ref([]);
     const nextId = ref(1);
     const selectedIds = ref<number[]>([]);
@@ -43,6 +45,19 @@ export function useWidgets() {
         return result;
     });
 
+    const clampAllWidgets = () => {
+        const cw = settings.value.canvasWidth;
+        const ch = settings.value.canvasHeight;
+        clampAllWidgetsInPlace(widgets.value, cw, ch);
+    };
+
+    watch(
+        () => [settings.value.canvasWidth, settings.value.canvasHeight] as const,
+        () => {
+            clampAllWidgets();
+        },
+    );
+
     const selectionStyle = computed(() => {
         if (!isSelecting.value) return {};
         const x1 = Math.min(selectStart.value.x, selectCurrent.value.x);
@@ -65,16 +80,22 @@ export function useWidgets() {
         } else if (type === 'button') {
             defaultText = '按钮';
         }
+        const cw = settings.value.canvasWidth;
+        const ch = settings.value.canvasHeight;
+        const ww = 100;
+        const hh = 100;
+        const cx = Math.max(0, Math.floor((cw - ww) / 2));
+        const cy = Math.max(0, Math.floor((ch - hh) / 2));
         widgets.value.push({
             id,
             name: `${type}_${id}`,
             type,
             parentId: null,
-            // 基础属性
-            x: 960,
-            y: 540,
-            w: 100,
-            h: 100,
+            // 基础属性（画布内居中）
+            x: cx,
+            y: cy,
+            w: ww,
+            h: hh,
             enable: true,
             visible: true,
             locked: false,
@@ -95,6 +116,7 @@ export function useWidgets() {
             selectedIndex: 0,
         });
         selectedIds.value = [id];
+        clampAllWidgets();
     };
 
     const moveWidgetWithChildren = (rootId: number, dx: number, dy: number) => {
@@ -112,6 +134,7 @@ export function useWidgets() {
                 .forEach((child) => move(child.id));
         };
         move(rootId);
+        clampAllWidgets();
     };
 
     const clearAll = () => {
@@ -150,6 +173,7 @@ export function useWidgets() {
         selectionStyle,
         addWidget,
         moveWidgetWithChildren,
+        clampAllWidgets,
         clearAll,
         deleteSelected,
     };

@@ -2,6 +2,7 @@ import { ref, type Ref } from 'vue';
 import { open as tauriOpen, save as tauriSave } from '@tauri-apps/plugin-dialog';
 import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs';
 import type { Widget, Settings, ImageResource, Animation } from '../types';
+import { clampAllWidgetsInPlace } from './widgetCanvasBounds';
 import type { ExportPlugin } from '../types/plugin';
 
 interface ExportConfig {
@@ -175,6 +176,7 @@ export function useProjectFile(
             currentProjectPath.value = filePath;
             addRecentProject(filePath);
             showWelcome.value = false;
+            clampAllWidgetsInPlace(widgetsList.value, settings.value.canvasWidth, settings.value.canvasHeight);
             message.value = '项目已从文件载入：' + filePath;
         } catch (e: any) {
             console.error('载入项目失败', e);
@@ -258,6 +260,7 @@ export function useProjectFile(
                     }
                 }
                 currentProjectPath.value = null; // 当前通过 input 打开的项目不记录磁盘路径
+                clampAllWidgetsInPlace(widgetsList.value, settings.value.canvasWidth, settings.value.canvasHeight);
                 message.value = '项目已从文件载入：' + file.name;
             } catch (e) {
                 console.error('载入项目失败', e);

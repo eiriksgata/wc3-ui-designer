@@ -16,10 +16,29 @@
         <div class="settings-section">
           <h3>画布设置</h3>
           <label for="canvas-width">画布宽度</label>
-          <v-text-field id="canvas-width" type="number" density="compact" variant="outlined" hide-details v-model.number="localSettings.canvasWidth" min="100" max="10000" />
+          <v-text-field
+            id="canvas-width"
+            type="number"
+            density="compact"
+            variant="outlined"
+            hide-details
+            v-model.number="localSettings.canvasWidth"
+            :min="WC3_CANVAS_MIN_WIDTH"
+            :max="WC3_CANVAS_MAX_WIDTH"
+          />
 
-          <label for="canvas-height">画布高度</label>
-          <v-text-field id="canvas-height" type="number" density="compact" variant="outlined" hide-details v-model.number="localSettings.canvasHeight" min="100" max="10000" />
+          <label for="canvas-height">画布高度（随宽度，4:3）</label>
+          <v-text-field
+            id="canvas-height"
+            density="compact"
+            variant="outlined"
+            hide-details
+            readonly
+            :model-value="canvasHeightFromWidth(localSettings.canvasWidth || WC3_CANVAS_MIN_WIDTH)"
+          />
+          <div class="hint">
+            与魔兽争霸 3 全屏 Frame 归一化范围一致：横向约 0～{{ WC3_FRAME_UI_NORM_WIDTH }}、纵向约 0～{{ WC3_FRAME_UI_NORM_HEIGHT }}（BlzFrameSetAbsPoint 等，4:3 平面）。设计器画布为与之成比例的像素（宽 {{ WC3_CANVAS_MIN_WIDTH }}～{{ WC3_CANVAS_MAX_WIDTH }}，高由宽算出）。
+          </div>
 
           <label for="control-panel-width">控件面板宽度</label>
           <v-text-field id="control-panel-width" type="number" density="compact" variant="outlined" hide-details v-model.number="localSettings.controlPanelWidth" min="120" max="600" />
@@ -67,6 +86,14 @@
 
 <script setup lang="ts">
 import { ref, watch, computed, onBeforeUnmount } from 'vue';
+import {
+  WC3_CANVAS_MIN_WIDTH,
+  WC3_CANVAS_MAX_WIDTH,
+  WC3_FRAME_UI_NORM_WIDTH,
+  WC3_FRAME_UI_NORM_HEIGHT,
+  canvasHeightFromWidth,
+  clampCanvasSize,
+} from '../constants/wc3CanvasLimits';
 
 const props = defineProps({
   showSettings: Boolean,
@@ -87,6 +114,15 @@ watch(() => props.settings, (newVal) => {
   localSettings.value = { ...newVal };
 }, { deep: true });
 
+watch(
+  () => localSettings.value.canvasWidth,
+  (w) => {
+    if (typeof w !== 'number' || Number.isNaN(w)) return;
+    const clamped = Math.min(WC3_CANVAS_MAX_WIDTH, Math.max(WC3_CANVAS_MIN_WIDTH, w));
+    localSettings.value.canvasHeight = canvasHeightFromWidth(clamped);
+  },
+);
+
 const close = () => {
   emit('update:showSettings', false);
 };
@@ -98,6 +134,12 @@ const onDialogModelUpdate = (value: boolean) => {
 };
 
 const handleSave = () => {
+  const { width, height } = clampCanvasSize(
+    localSettings.value.canvasWidth,
+    localSettings.value.canvasHeight,
+  );
+  localSettings.value.canvasWidth = width;
+  localSettings.value.canvasHeight = height;
   emit('update:settings', { ...localSettings.value });
   emit('save');
   close();

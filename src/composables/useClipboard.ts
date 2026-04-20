@@ -6,7 +6,8 @@ export function useClipboard(
     widgetsList: Ref<Widget[]>,
     selectedIds: Ref<number[]>,
     nextId: Ref<number>,
-    pushHistory: () => void
+    pushHistory: () => void,
+    clampAllWidgets: () => void,
 ) {
     const clipboard = ref<Widget | null>(null);
 
@@ -28,6 +29,7 @@ export function useClipboard(
         };
         widgetsList.value.push(newWidget);
         selectedIds.value = [id];
+        clampAllWidgets();
     };
 
     const pasteClipboardWithHistory = () => {

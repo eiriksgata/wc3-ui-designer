@@ -85,17 +85,21 @@ function convertImagePath(imagePath: string, resourcePath: string, codePath: str
 
 // 导出函数
 function exportFunction(context: ExportContext): string {
-    const { widgets, options, animations } = context;
+    const { widgets, options, animations, settings } = context;
 
     if (!widgets || widgets.length === 0) {
         return '';
     }
+
+    const rootW = Math.round(settings.canvasWidth);
+    const rootH = Math.round(settings.canvasHeight);
 
     // 使用项目名（前端通过 options.fileName 传入）作为类名，默认 GeneratedUI
     const className = options.fileName || 'GeneratedUI';
 
     let lua = '';
     lua += '-- 由 Vue UI 设计器自动生成\n';
+    lua += '-- WC3 原生 Frame 归一化全屏 UI 约 X:0~0.8, Y:0~0.6（4:3）；设计器画布与之为同比例像素。\n';
     lua += '-- 你可以根据需要改名 / 增加逻辑\n\n';
     lua += `---@class ${className}:Frame.Panel\n`;
     lua += `---@field new fun():${className}\n`;
@@ -105,8 +109,8 @@ function exportFunction(context: ExportContext): string {
     lua += '        parent = Frame.GameUI,\n';
     lua += '        x = 0,\n';
     lua += '        y = 0,\n';
-    lua += '        w = 1920,\n';
-    lua += '        h = 1080,\n';
+    lua += `        w = ${rootW},\n`;
+    lua += `        h = ${rootH},\n`;
     lua += '        image = Const.Texture.blank,\n';
     lua += '        -- 以下子控件由设计器生成\n';
 

@@ -20,14 +20,14 @@ fn resolve_mcp_script_path() -> Option<PathBuf> {
 
     let mut candidates: Vec<PathBuf> = Vec::new();
     if let Ok(cwd) = std::env::current_dir() {
-        candidates.push(cwd.join("mcp").join("server.mjs"));
-        candidates.push(cwd.join("..").join("mcp").join("server.mjs"));
+        candidates.push(cwd.join("mcp").join("start-http-stack.mjs"));
+        candidates.push(cwd.join("..").join("mcp").join("start-http-stack.mjs"));
     }
     if let Ok(exe) = std::env::current_exe() {
         if let Some(parent) = exe.parent() {
-            candidates.push(parent.join("mcp").join("server.mjs"));
-            candidates.push(parent.join("..").join("..").join("mcp").join("server.mjs"));
-            candidates.push(parent.join("..").join("..").join("..").join("mcp").join("server.mjs"));
+            candidates.push(parent.join("mcp").join("start-http-stack.mjs"));
+            candidates.push(parent.join("..").join("..").join("mcp").join("start-http-stack.mjs"));
+            candidates.push(parent.join("..").join("..").join("..").join("mcp").join("start-http-stack.mjs"));
         }
     }
 
@@ -46,7 +46,7 @@ fn start_mcp_server_inner(state: &McpServerState) -> Result<String, String> {
     }
 
     let script_path = resolve_mcp_script_path()
-        .ok_or_else(|| "未找到 mcp/server.mjs，请检查项目目录或设置 UI_DESIGNER_MCP_SCRIPT_PATH".to_string())?;
+        .ok_or_else(|| "未找到 mcp/start-http-stack.mjs，请检查项目目录或设置 UI_DESIGNER_MCP_SCRIPT_PATH".to_string())?;
     let script_str = script_path
         .to_str()
         .ok_or_else(|| "MCP 脚本路径不是有效 UTF-8".to_string())?;
@@ -258,14 +258,14 @@ pub fn run() {
                 )?;
             }
 
-            // 默认自动启动本地 MCP Server，可通过环境变量显式关闭
+            // 默认自动启动本地 MCP HTTP 栈（网关 + 运行态桥接），可通过环境变量显式关闭
             let auto_start = std::env::var("UI_DESIGNER_AUTO_START_MCP")
                 .map(|value| value != "0" && value.to_lowercase() != "false")
                 .unwrap_or(true);
             if auto_start {
                 let state = app.state::<McpServerState>();
                 if let Err(err) = start_mcp_server_inner(&state) {
-                    eprintln!("[ui-designer] 自动启动 MCP Server 失败: {err}");
+                    eprintln!("[ui-designer] 自动启动 MCP HTTP 栈失败: {err}");
                 }
             }
             Ok(())

@@ -73,7 +73,7 @@
         <v-btn variant="text" density="comfortable" class="menu-activator" @click="emit('open-settings')">设置</v-btn>
         <v-btn variant="text" density="comfortable" class="menu-activator" @click="emit('open-export')">导出 (F4)</v-btn>
         <v-btn variant="text" density="comfortable" class="menu-activator" @click="emit('open-help')">帮助</v-btn>
-        <v-btn variant="text" density="comfortable" class="menu-activator" @click="emit('open-mcp-guide')">MCP配置（VS Code/Copilot）</v-btn>
+        <v-btn variant="text" density="comfortable" class="menu-activator" @click="emit('open-mcp-guide')">MCP（Streamable HTTP）</v-btn>
         <v-btn variant="text" density="comfortable" class="menu-activator" @click="emit('toggle-theme')">
             主题：{{ themeName === 'appDark' ? '深色' : '浅色' }}
         </v-btn>
