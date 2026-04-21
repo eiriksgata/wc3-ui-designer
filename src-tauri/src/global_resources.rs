@@ -12,7 +12,7 @@
 use std::fs;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::UNIX_EPOCH;
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as B64;
@@ -23,6 +23,7 @@ use image_blp::encode::save_blp;
 use image_blp::parser::load_blp;
 use image_blp::types::BlpImage as BlpImageType;
 use serde::{Deserialize, Serialize};
+use tauri::{AppHandle, Emitter};
 
 // ----------------------------- Data types -----------------------------
 
@@ -79,6 +80,31 @@ pub struct ImportWarning {
 pub struct ImportResult {
     pub entries: Vec<GlobalResourceEntry>,
     pub warnings: Vec<ImportWarning>,
+}
+
+/// 导入进度事件 payload（事件名 `global-resource-import/progress`）。
+///
+/// - 导入启动后先发一条 `phase="begin"`（带 `total`）；
+/// - 每个源文件处理开始时发 `phase="item-start"`；
+/// - 处理结束发 `phase="item-done"`（成功）或 `phase="item-error"`（带 `message`）。
+/// - 整个批次结束时发 `phase="end"`。
+/// 前端通过事件监听就能实时驱动进度条和当前处理项。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportProgress {
+    pub phase: String,
+    pub index: usize,
+    pub total: usize,
+    pub source: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+}
+
+const IMPORT_PROGRESS_EVENT: &str = "global-resource-import/progress";
+
+fn emit_progress(app: &AppHandle, p: ImportProgress) {
+    // 前端订阅不到也不算错（例如首次启动/对话框没挂载）——直接吞掉。
+    let _ = app.emit(IMPORT_PROGRESS_EVENT, p);
 }
 
 #[derive(Debug, Serialize)]
@@ -304,8 +330,30 @@ pub fn global_resource_list(root: String) -> Vec<GlobalResourceEntry> {
     out
 }
 
+/// 哪些源扩展可以转成 BLP？schema 2.0.0 起：
+/// **TGA 不转换**——WC3 原生支持 TGA，保留原文件 alpha 精度更优。
+/// 只转无损拷贝代价高的 PNG/JPG/BMP。
+fn is_convertible_to_blp(ext: &str) -> bool {
+    matches!(ext, "png" | "jpg" | "jpeg" | "bmp")
+}
+
 #[tauri::command]
-pub fn global_resource_import(req: ImportRequest) -> ImportResult {
+pub async fn global_resource_import(app: AppHandle, req: ImportRequest) -> ImportResult {
+    // 全部重活扔到 blocking 线程：`image::open` + BLP 编码是 CPU 密集型，
+    // 放在 async 事件循环里会阻塞 IPC，前端表现为 UI 卡死。
+    let handle = app.clone();
+    tauri::async_runtime::spawn_blocking(move || do_import(handle, req))
+        .await
+        .unwrap_or_else(|e| ImportResult {
+            entries: Vec::new(),
+            warnings: vec![ImportWarning {
+                source: String::new(),
+                message: format!("导入线程异常退出: {e}"),
+            }],
+        })
+}
+
+fn do_import(app: AppHandle, req: ImportRequest) -> ImportResult {
     let mut result = ImportResult {
         entries: Vec::new(),
         warnings: Vec::new(),
@@ -388,14 +436,48 @@ pub fn global_resource_import(req: ImportRequest) -> ImportResult {
         }
     }
 
-    for (src, extra_sub) in &expanded {
+    let total = expanded.len();
+    emit_progress(
+        &app,
+        ImportProgress {
+            phase: "begin".into(),
+            index: 0,
+            total,
+            source: String::new(),
+            message: None,
+        },
+    );
+
+    for (idx, (src, extra_sub)) in expanded.iter().enumerate() {
         let src_raw_display = src.to_string_lossy().to_string();
+        emit_progress(
+            &app,
+            ImportProgress {
+                phase: "item-start".into(),
+                index: idx,
+                total,
+                source: src_raw_display.clone(),
+                message: None,
+            },
+        );
+
         let src_ext = ext_of(src);
         if !is_image_ext(&src_ext) {
+            let msg = format!("不支持的扩展名: .{src_ext}");
             result.warnings.push(ImportWarning {
                 source: src_raw_display.clone(),
-                message: format!("不支持的扩展名: .{src_ext}"),
+                message: msg.clone(),
             });
+            emit_progress(
+                &app,
+                ImportProgress {
+                    phase: "item-error".into(),
+                    index: idx,
+                    total,
+                    source: src_raw_display.clone(),
+                    message: Some(msg),
+                },
+            );
             continue;
         }
 
@@ -405,9 +487,8 @@ pub fn global_resource_import(req: ImportRequest) -> ImportResult {
             .unwrap_or("image")
             .to_string();
 
-        // 决定目标扩展名
-        let want_convert =
-            req.convert_to_blp && matches!(src_ext.as_str(), "png" | "jpg" | "jpeg" | "bmp" | "tga");
+        // 决定目标扩展名——TGA 不转换（WC3 原生支持，直接拷贝即可）
+        let want_convert = req.convert_to_blp && is_convertible_to_blp(src_ext.as_str());
         let target_ext = if want_convert { "blp" } else { src_ext.as_str() };
 
         // 按"被展开的目录层级"决定最终目标目录。
@@ -418,10 +499,21 @@ pub fn global_resource_import(req: ImportRequest) -> ImportResult {
         };
         if !this_dst_dir.exists() {
             if let Err(e) = fs::create_dir_all(&this_dst_dir) {
+                let msg = format!("创建子目录失败: {e}");
                 result.warnings.push(ImportWarning {
                     source: src_raw_display.clone(),
-                    message: format!("创建子目录失败: {e}"),
+                    message: msg.clone(),
                 });
+                emit_progress(
+                    &app,
+                    ImportProgress {
+                        phase: "item-error".into(),
+                        index: idx,
+                        total,
+                        source: src_raw_display.clone(),
+                        message: Some(msg),
+                    },
+                );
                 continue;
             }
         }
@@ -484,16 +576,59 @@ pub fn global_resource_import(req: ImportRequest) -> ImportResult {
             }
         };
 
-        if let Some(abs) = outcome {
-            if let Some(entry) = to_entry(&root, &abs) {
-                result.entries.push(entry);
+        match outcome {
+            Some(abs) => {
+                if let Some(entry) = to_entry(&root, &abs) {
+                    result.entries.push(entry);
+                }
+                emit_progress(
+                    &app,
+                    ImportProgress {
+                        phase: "item-done".into(),
+                        index: idx,
+                        total,
+                        source: src_raw_display,
+                        message: None,
+                    },
+                );
+            }
+            None => {
+                emit_progress(
+                    &app,
+                    ImportProgress {
+                        phase: "item-error".into(),
+                        index: idx,
+                        total,
+                        source: src_raw_display,
+                        message: Some("处理失败".into()),
+                    },
+                );
             }
         }
     }
 
+    emit_progress(
+        &app,
+        ImportProgress {
+            phase: "end".into(),
+            index: total,
+            total,
+            source: String::new(),
+            message: None,
+        },
+    );
+
     result
 }
 
+/// 从全局库彻底删除一条路径（文件或目录）。
+///
+/// 策略：**硬删除**——直接走 `fs::remove_file` / `fs::remove_dir_all`，不再挪去 `.trash`。
+/// 老版本曾经留过 `.trash/<timestamp>/<name>` 的软删除目录做防手滑兜底，但会无限累积
+/// 磁盘占用、又没有自动清理入口，用户体验更差。现在删除即释放。
+///
+/// 兼容清理：如果根目录下还残留着老版本写入的 `.trash` 目录，这个命令也会顺手把它
+/// 整个干掉（只在它看起来确实是老遗留时才动——顶层只能含 "数字时间戳命名" 的子目录）。
 #[tauri::command]
 pub fn global_resource_delete(root: String, rel_path: String) -> Result<(), String> {
     let root = normalize_root(&root);
@@ -509,32 +644,50 @@ pub fn global_resource_delete(root: String, rel_path: String) -> Result<(), Stri
         return Err("目标路径越界".to_string());
     }
     if !abs.exists() {
+        // 目标已经不存在，也顺手把老版本留下的 .trash 清掉
+        let _ = purge_legacy_trash(&root);
         return Ok(());
     }
 
-    // 软删除：移动到 <root>/.trash/<timestamp>/<relPath>
-    let ts = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_millis())
-        .unwrap_or(0);
-    let trash_dir = root.join(".trash").join(ts.to_string());
-    if let Err(e) = fs::create_dir_all(&trash_dir) {
-        return Err(format!("创建 .trash 目录失败: {e}"));
+    let removed = if abs.is_dir() {
+        fs::remove_dir_all(&abs).map_err(|e| format!("删除目录失败: {e}"))
+    } else {
+        fs::remove_file(&abs).map_err(|e| format!("删除文件失败: {e}"))
+    };
+    let result = removed.map(|_| ());
+
+    // 即便本次删除没事，也顺手把残留的老 .trash 清掉，保证迁移到新策略后全局库干净。
+    let _ = purge_legacy_trash(&root);
+
+    result
+}
+
+/// 扫一眼根目录下的 `.trash`：如果存在且仅由"老版本的时间戳子目录"组成就整个删掉。
+/// 保守起见，遇到无法识别的内容就停手不动，避免误删用户自己放在同名目录里的东西。
+fn purge_legacy_trash(root: &Path) -> std::io::Result<()> {
+    let trash = root.join(".trash");
+    if !trash.is_dir() {
+        return Ok(());
     }
-    let file_name = abs
-        .file_name()
-        .and_then(|s| s.to_str())
-        .unwrap_or("deleted");
-    let dst = trash_dir.join(file_name);
-    match fs::rename(&abs, &dst) {
-        Ok(_) => Ok(()),
-        Err(_) => {
-            // 跨设备 rename 可能失败 → 退化为拷贝 + 删除
-            fs::copy(&abs, &dst).map_err(|e| format!("软删除拷贝失败: {e}"))?;
-            fs::remove_file(&abs).map_err(|e| format!("删除原文件失败: {e}"))?;
-            Ok(())
+    // 校验：里面要么为空，要么只有数字命名的子目录（老版本 `ts.to_string()` 的格式）。
+    let mut all_look_like_legacy = true;
+    for entry in fs::read_dir(&trash)? {
+        let entry = entry?;
+        let name = entry.file_name();
+        let name_str = name.to_string_lossy();
+        let is_numeric_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false)
+            && !name_str.is_empty()
+            && name_str.chars().all(|c| c.is_ascii_digit());
+        if !is_numeric_dir {
+            all_look_like_legacy = false;
+            break;
         }
     }
+    if all_look_like_legacy {
+        // 整个删掉；失败就保留，让用户自己处理。
+        fs::remove_dir_all(&trash)?;
+    }
+    Ok(())
 }
 
 #[tauri::command]

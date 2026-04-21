@@ -37,19 +37,40 @@
 
                 <div class="section">
                     <v-checkbox v-model="convertToBlp" density="compact" hide-details
-                        :disabled="busy || allAlreadyBlp"
-                        :label="allAlreadyBlp
-                            ? '全部文件已是 BLP，无需转换'
-                            : '将 PNG / JPG / BMP / TGA 转换为 BLP'" />
+                        :disabled="busy || !hasConvertible"
+                        :label="!hasConvertible
+                            ? '当前文件列表里没有可转换到 BLP 的格式'
+                            : '将 PNG / JPG / BMP 转换为 BLP（TGA 保留原文件）'" />
                     <div class="hint">
                         WC3 贴图建议使用 BLP。将使用 BLP1 + JPEG（带 alpha）编码，
                         兼容性最好；转换失败的文件会自动回退为直接拷贝，并在结果里给出 warning。
+                        TGA 因为 WC3 原生支持、保留原图 alpha 精度，不在此选项影响范围内。
                     </div>
                 </div>
 
                 <div class="section">
                     <v-checkbox v-model="overwrite" density="compact" hide-details
                         :disabled="busy" label="同名覆盖（关闭则自动加 -1 / -2 后缀）" />
+                </div>
+
+                <div v-if="busy || progress.total > 0" class="section progress-block">
+                    <label>
+                        导入进度
+                        <span v-if="progress.total > 0" class="progress-count">
+                            {{ progress.done }} / {{ progress.total }}
+                            <span v-if="progress.errors > 0" class="progress-err">（{{ progress.errors }} 项失败）</span>
+                        </span>
+                    </label>
+                    <v-progress-linear
+                        :model-value="progressPercent"
+                        :indeterminate="busy && progress.total === 0"
+                        color="primary"
+                        height="10"
+                        rounded
+                    />
+                    <div v-if="progress.current" class="progress-current" :title="progress.current">
+                        正在处理：{{ shortName(progress.current) }}
+                    </div>
                 </div>
 
                 <div v-if="warnings.length" class="section warning-block">
@@ -93,6 +114,11 @@ const props = defineProps({
     warnings: { type: Array as () => ImportWarning[], default: () => [] },
     /** 是否正在执行导入（防止并发点击 & 展示 loading） */
     busy: { type: Boolean, default: false },
+    /** 实时导入进度（由父组件从 useGlobalResourceLibrary.importProgress 透传）。 */
+    progress: {
+        type: Object as () => { total: number; done: number; current: string; errors: number },
+        default: () => ({ total: 0, done: 0, current: '', errors: 0 }),
+    },
 });
 
 const emit = defineEmits(['update:show', 'confirm']);
@@ -112,6 +138,19 @@ const shortName = (p: string) => {
 const allAlreadyBlp = computed(
     () => !!sources.value.length && sources.value.every((s) => extOf(s) === 'blp'),
 );
+
+/** 列表里是否存在"可被转成 BLP"的源文件（PNG/JPG/BMP）。
+ *  TGA 不在此列——TGA WC3 原生支持，保留原文件更好。 */
+const hasConvertible = computed(() =>
+    sources.value.some((s) => ['png', 'jpg', 'jpeg', 'bmp'].includes(extOf(s))),
+);
+
+const progressPercent = computed(() => {
+    const t = props.progress?.total || 0;
+    const d = props.progress?.done || 0;
+    if (t <= 0) return 0;
+    return Math.min(100, Math.round((d / t) * 100));
+});
 
 watch(
     () => props.show,
@@ -269,6 +308,34 @@ const onConfirm = () => {
     border: 1px solid rgba(255, 187, 0, 0.35);
     border-radius: 6px;
     padding: 8px 10px;
+}
+
+.progress-block {
+    background: rgba(100, 162, 255, 0.08);
+    border: 1px solid rgba(100, 162, 255, 0.28);
+    border-radius: 6px;
+    padding: 10px 12px;
+    gap: 6px;
+}
+
+.progress-count {
+    float: right;
+    color: #c8d5ef;
+    font-size: 11px;
+    font-weight: 500;
+}
+
+.progress-err {
+    color: #f5a3a3;
+    margin-left: 4px;
+}
+
+.progress-current {
+    font-size: 11px;
+    color: #97a4be;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .warning-row {

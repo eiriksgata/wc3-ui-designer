@@ -223,10 +223,12 @@
       <!-- 底部资源管理器（schema 2.0.0：单一全局库视图） -->
       <ResourcesPanel :height="resourcesHeight" :theme-name="activeThemeName" :collapsed="isResourcesCollapsed"
         :global-resources="globalResources"
+        :global-resource-root-path="settings.globalResourceRootPath || ''"
         :global-root-configured="!!settings.globalResourceRootPath"
         :is-resources-drag-over="isResourcesDragOver" :hover-preview="hoverPreview" v-model:panelRef="resourcesPanelRef"
         v-model:gridRef="resourcesGridRef" @import-resources="onImportResourcesClick"
         @delete-from-global="onDeleteFromGlobal"
+        @delete-folder-from-global="onDeleteFolderFromGlobal"
         @open-settings="showSettings = true"
         @apply-resource="applyResourceToSelection" @drag-enter="onResourcesDragEnter" @drag-over="onResourcesDragOver"
         @drag-leave="onResourcesDragLeave" @drop="onResourcesDrop" @drop-paths="onTauriDropPaths"
@@ -283,7 +285,9 @@
       :root-path="settings.globalResourceRootPath"
       :warnings="importToGlobalWarnings"
       :busy="importToGlobalBusy"
-      @confirm="onImportToGlobalConfirm" />
+      :progress="globalLibImportProgress"
+      @confirm="onImportToGlobalConfirm"
+      @update:show="onImportToGlobalDialogToggle" />
 
     <!-- 切换全局库路径时的迁移选择 -->
     <v-dialog v-model="showMigrateDialog" width="520" persistent scrim="rgba(9, 11, 15, 0.72)">
@@ -558,6 +562,8 @@ const {
   importSources: globalLibImport,
   removeEntry: globalLibRemove,
   migrate: globalLibMigrate,
+  importProgress: globalLibImportProgress,
+  resetImportProgress: globalLibResetImportProgress,
 } = globalLib;
 
 // ---- 首次引导 ----
@@ -602,6 +608,7 @@ const onImportToGlobalConfirm = async (payload: {
     importToGlobalWarnings.value = result.warnings || [];
     if (!result.warnings || result.warnings.length === 0) {
       showImportToGlobalDialog.value = false;
+      globalLibResetImportProgress();
     }
     const n = result.entries?.length || 0;
     if (n > 0) message.value = `已导入 ${n} 项到全局资源库`;
@@ -610,12 +617,33 @@ const onImportToGlobalConfirm = async (payload: {
   }
 };
 
+/** 对话框通过 ✕/取消关闭时——如果不是在忙就把进度清掉，避免下次打开看见残留。 */
+const onImportToGlobalDialogToggle = (visible: boolean) => {
+  if (visible) return;
+  if (!importToGlobalBusy.value) {
+    globalLibResetImportProgress();
+  }
+};
+
 // ---- 从全局库删除（右键菜单）----
+// 注意：schema 2.0.0 起改为**硬删除**——调用 `global_resource_delete` 会直接从磁盘移除，
+// 不再挪去 .trash。UI 的确认文案也要相应更严重一些。
 const onDeleteFromGlobal = async (res: { value: string; label: string; relPath?: string }) => {
-  if (!confirm(`确定要从全局资源库删除 "${res.label}" 吗？（会移动到 .trash 目录，可手动找回）`)) return;
-  // 新模型里 entry 以 relPath 为键。
+  if (!confirm(`确定要从全局资源库彻底删除 "${res.label}" 吗？\n此操作会直接从磁盘删除文件，无法撤销。`)) return;
   const key = (res as any).relPath || (res as any).globalRelPath || res.value;
   await globalLibRemove(key);
+};
+
+/**
+ * 从全局库硬删除整个文件夹（右键菜单）。
+ * folder.path 是相对全局库根的路径（反斜杠风格）。后端会递归移除整个目录。
+ */
+const onDeleteFolderFromGlobal = async (folder: { path: string; name: string; count: number }) => {
+  if (!folder?.path) return;
+  const msg = `确定要从全局资源库彻底删除文件夹 "${folder.name}" 吗？\n` +
+    `该文件夹下共 ${folder.count} 个资源将被一并从磁盘删除，无法撤销。`;
+  if (!confirm(msg)) return;
+  await globalLibRemove(folder.path);
 };
 
 // ---- 切换全局库路径：迁移对话框 ----

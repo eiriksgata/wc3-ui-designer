@@ -2,23 +2,39 @@
     <div class="resources-panel"
         :class="{ 'resources-panel--light': themeName === 'appLight', 'resources-panel--collapsed': collapsed }"
         :style="collapsed ? undefined : { height: height + 'px' }" ref="panelRef">
-        <div class="resources-header" :class="{ 'resources-header--collapsed': collapsed }" @click="onToggleCollapse">
+        <div
+            class="resources-header"
+            :class="{ 'resources-header--collapsed': collapsed }"
+            :title="collapsed && globalRootConfigured && currentDirectoryAbsolutePath
+                ? `当前目录：${currentDirectoryAbsolutePath}`
+                : undefined"
+            @click="onToggleCollapse"
+        >
             <span>资源管理器</span>
-            <!-- 子标题：全局资源库（唯一资源来源） -->
+            <!-- 全局资源库徽标（路径由下方面包屑第一段展示磁盘根） -->
             <span v-if="!collapsed" class="resources-subtitle" title="跨项目共享的全局资源库，可在设置里配置路径">
                 全局资源库<span v-if="globalRootConfigured && globalResources.length" class="subtitle-badge">{{ globalResources.length }}</span>
             </span>
-            <!-- 面包屑导航 -->
+            <!-- 面包屑：第一段 = 全局库根绝对路径（原「根」），之后为相对子文件夹 -->
             <div v-if="!collapsed" class="resources-breadcrumbs" @click.stop>
-                <button class="crumb-btn" :class="{ 'crumb-btn--active': !currentPath }" type="button"
-                    @click="goToPath('')" title="根目录">
-                    根
-                </button>
+                <template v-if="globalRootCrumbLabel">
+                    <button
+                        class="crumb-btn crumb-btn--root"
+                        :class="{ 'crumb-btn--active': !currentPath }"
+                        type="button"
+                        @click="goToPath('')"
+                        :title="'全局库根目录（点击返回）\n' + globalRootCrumbLabel">
+                        {{ globalRootCrumbLabel }}
+                    </button>
+                </template>
+                <span v-else class="crumb-root-placeholder" title="请在设置中配置全局资源库路径">
+                    （未配置根路径）
+                </span>
                 <template v-for="(crumb, idx) in breadcrumbs" :key="crumb.path">
-                    <span class="crumb-sep">/</span>
+                    <span class="crumb-sep">{{ '\\' }}</span>
                     <button class="crumb-btn"
                         :class="{ 'crumb-btn--active': idx === breadcrumbs.length - 1 }" type="button"
-                        :title="crumb.path" @click="goToPath(crumb.path)">
+                        :title="fullCrumbTitle(crumb.path)" @click="goToPath(crumb.path)">
                         {{ crumb.name }}
                     </button>
                 </template>
@@ -72,12 +88,13 @@
             <div v-for="folder in currentFolders" :key="'folder:' + folder.path" class="resource-item folder-item"
                 :data-folder-path="folder.path"
                 @click="enterFolder(folder.name)"
+                @contextmenu.prevent="onFolderContextMenu(folder, $event)"
                 @dragenter.prevent="onFolderDragEnter(folder, $event)"
                 @dragover.prevent="onFolderDragOver($event)"
                 @dragleave="onFolderDragLeave(folder, $event)"
                 @drop.prevent="onFolderDrop(folder, $event)"
                 :class="{ 'folder-item--drag-over': dragOverFolder === folder.path }"
-                :title="`${folder.name}（${folder.count} 项）`">
+                :title="`${folder.name}（${folder.count} 项）\n右键更多操作`">
                 <div class="resource-thumb folder-thumb">
                     <span class="folder-glyph">📁</span>
                     <span class="folder-count">{{ folder.count }}</span>
@@ -103,11 +120,6 @@
                 <div class="resource-label" :title="res.value">
                     {{ res.label }}
                 </div>
-                <button class="use-in-project-btn remove-from-project-btn" type="button"
-                    title="从全局资源库删除（移到 .trash，可找回）"
-                    @click.stop="emit('delete-from-global', res)">
-                    ✕删除
-                </button>
             </div>
             <!-- 空态提示 -->
             <div v-if="globalRootConfigured && currentFolders.length === 0 && currentFiles.length === 0"
@@ -125,6 +137,40 @@
                 <div class="resource-placeholder">无预览</div>
             </template>
             <div class="resource-hover-label">{{ hoverPreview.res.label }}</div>
+        </div>
+
+        <!-- 右键菜单：文件 / 文件夹共用同一组容器，内容按 target 区分。
+             定位用 fixed + 视口坐标，避免被 overflow 容器裁掉。
+             点击空白 / Esc 会关闭（见 onMounted 里挂的全局监听）。 -->
+        <div v-if="contextMenu.visible"
+            class="ctx-menu"
+            :style="{ left: contextMenu.x + 'px', top: contextMenu.y + 'px' }"
+            @click.stop @contextmenu.prevent.stop>
+            <template v-if="contextMenu.target === 'file' && contextMenu.res">
+                <div class="ctx-menu-header" :title="contextMenu.res.value">
+                    {{ contextMenu.res.label }}
+                </div>
+                <button class="ctx-menu-item" type="button" @click="ctxApplyFile">
+                    <span class="ctx-icon">★</span>应用到选中控件
+                </button>
+                <div class="ctx-menu-sep"></div>
+                <button class="ctx-menu-item ctx-menu-item--danger" type="button" @click="ctxDeleteFile">
+                    <span class="ctx-icon">✕</span>从全局库删除…
+                </button>
+            </template>
+            <template v-else-if="contextMenu.target === 'folder' && contextMenu.folder">
+                <div class="ctx-menu-header" :title="contextMenu.folder.path">
+                    📁 {{ contextMenu.folder.name }}
+                    <span class="ctx-menu-sub">（{{ contextMenu.folder.count }} 项）</span>
+                </div>
+                <button class="ctx-menu-item" type="button" @click="ctxOpenFolder">
+                    <span class="ctx-icon">↵</span>打开文件夹
+                </button>
+                <div class="ctx-menu-sep"></div>
+                <button class="ctx-menu-item ctx-menu-item--danger" type="button" @click="ctxDeleteFolder">
+                    <span class="ctx-icon">🗑</span>删除整个文件夹…
+                </button>
+            </template>
         </div>
     </div>
 </template>
@@ -153,6 +199,8 @@ const props = defineProps({
     collapsed: { type: Boolean, default: false },
     /** 全局资源库条目（来自 useGlobalResourceLibrary），当没有配置路径时为空数组。 */
     globalResources: { type: Array as () => ResourceItem[], default: () => [] },
+    /** 全局资源库根目录绝对路径（与设置里一致），用于展示「当前目录」完整路径。 */
+    globalResourceRootPath: { type: String, default: '' },
     /** 全局资源库是否已配置了 root 路径；未配置时隐藏"导入到全局库"按钮并给出引导。 */
     globalRootConfigured: { type: Boolean, default: false },
     isResourcesDragOver: { type: Boolean, default: false },
@@ -167,8 +215,10 @@ const gridRef = defineModel('gridRef');
 const emit = defineEmits([
     /** "导入资源…"按钮：打开 ImportResourceDialog，导入到全局库。 */
     'import-resources',
-    /** 从全局库软删除资源（右键 / ✕删除按钮）。 */
+    /** 从全局库删除资源（仅右键菜单）。 */
     'delete-from-global',
+    /** 从全局库软删除整个文件夹（右键菜单）。payload: { path, name, count } */
+    'delete-folder-from-global',
     /** 单击资源：把绝对路径 apply 到选中控件。 */
     'apply-resource',
     'drag-enter',
@@ -199,6 +249,30 @@ const currentPrefix = computed(() => {
     const cur = normalizePath(currentPath.value);
     return cur ? cur + '\\' : '';
 });
+
+/** 根 + 当前面包屑子路径 → 完整绝对路径（反斜杠，与 Windows 全局库一致）。 */
+const currentDirectoryAbsolutePath = computed(() => {
+    const root = (props.globalResourceRootPath || '')
+        .trim()
+        .replace(/[\\/]+$/, '');
+    if (!root) return '';
+    const cur = normalizePath(currentPath.value);
+    if (!cur) return root;
+    return `${root}\\${cur}`;
+});
+
+/** 面包屑第一段显示用：全局库磁盘根（替代原来的「根」文案）。 */
+const globalRootCrumbLabel = computed(() =>
+    (props.globalResourceRootPath || '').trim().replace(/[\\/]+$/, ''),
+);
+
+/** 子文件夹段悬停：拼出该级对应的完整绝对路径。 */
+const fullCrumbTitle = (relPath: string): string => {
+    const root = globalRootCrumbLabel.value;
+    const rel = normalizePath(relPath);
+    if (!rel) return root || '';
+    return root ? `${root}\\${rel}` : rel;
+};
 
 // 当前目录下的直接子文件夹（聚合 + 统计项数）
 // 统一从全局库聚合——这是整个面板的唯一资源源。
@@ -273,9 +347,75 @@ const onImportResourcesClick = () => {
 
 const applyResourceToSelection = (res: ResourceItem) => emit('apply-resource', res);
 
-/** 右键 = 从全局库删除。 */
-const onResourceContextMenu = (res: ResourceItem, _e: MouseEvent) => {
-    emit('delete-from-global', res);
+/* --------------------------- 右键菜单 --------------------------- */
+// 单个菜单状态，target 决定渲染哪组菜单项。
+const contextMenu = ref<{
+    visible: boolean;
+    x: number;
+    y: number;
+    target: 'file' | 'folder' | null;
+    res?: ResourceItem;
+    folder?: FolderNode;
+}>({ visible: false, x: 0, y: 0, target: null });
+
+/** 估算菜单尺寸，再按视口边界夹一下，避免贴边被裁。 */
+const clampToViewport = (x: number, y: number) => {
+    const menuW = 220;
+    const menuH = 140;
+    const maxX = Math.max(0, window.innerWidth - menuW - 4);
+    const maxY = Math.max(0, window.innerHeight - menuH - 4);
+    return { x: Math.min(x, maxX), y: Math.min(y, maxY) };
+};
+
+const openContextMenuAt = (
+    e: MouseEvent,
+    payload:
+        | { target: 'file'; res: ResourceItem }
+        | { target: 'folder'; folder: FolderNode },
+) => {
+    const { x, y } = clampToViewport(e.clientX, e.clientY);
+    contextMenu.value = {
+        visible: true,
+        x,
+        y,
+        target: payload.target,
+        res: payload.target === 'file' ? payload.res : undefined,
+        folder: payload.target === 'folder' ? payload.folder : undefined,
+    };
+};
+
+const closeContextMenu = () => {
+    if (contextMenu.value.visible) {
+        contextMenu.value = { visible: false, x: 0, y: 0, target: null };
+    }
+};
+
+const onResourceContextMenu = (res: ResourceItem, e: MouseEvent) => {
+    openContextMenuAt(e, { target: 'file', res });
+};
+
+const onFolderContextMenu = (folder: FolderNode, e: MouseEvent) => {
+    openContextMenuAt(e, { target: 'folder', folder });
+};
+
+/** 菜单项行为：应用 / 删除文件 / 打开 / 删除文件夹。 */
+const ctxApplyFile = () => {
+    if (contextMenu.value.res) emit('apply-resource', contextMenu.value.res);
+    closeContextMenu();
+};
+const ctxDeleteFile = () => {
+    if (contextMenu.value.res) emit('delete-from-global', contextMenu.value.res);
+    closeContextMenu();
+};
+const ctxOpenFolder = () => {
+    if (contextMenu.value.folder) enterFolder(contextMenu.value.folder.name);
+    closeContextMenu();
+};
+const ctxDeleteFolder = () => {
+    if (contextMenu.value.folder) {
+        emit('delete-folder-from-global', { ...contextMenu.value.folder });
+    }
+    closeContextMenu();
 };
 
 const onResourcesDragEnter = (e: DragEvent) => emit('drag-enter', e);
@@ -397,7 +537,26 @@ const clearDragHover = () => {
     dragOverFolder.value = '';
 };
 
+// 全局事件：点空白 / Esc / 窗口 blur / 滚动 都关闭右键菜单。
+const onGlobalMouseDown = (e: MouseEvent) => {
+    if (!contextMenu.value.visible) return;
+    const target = e.target as HTMLElement | null;
+    if (target && target.closest('.ctx-menu')) return; // 点菜单内部不关
+    closeContextMenu();
+};
+const onGlobalKeyDown = (e: KeyboardEvent) => {
+    if (e.key === 'Escape') closeContextMenu();
+};
+const onGlobalScroll = () => closeContextMenu();
+
 onMounted(async () => {
+    window.addEventListener('mousedown', onGlobalMouseDown, true);
+    window.addEventListener('keydown', onGlobalKeyDown);
+    window.addEventListener('blur', closeContextMenu);
+    // scroll/resize 时关菜单，避免菜单坐标错位
+    window.addEventListener('scroll', onGlobalScroll, true);
+    window.addEventListener('resize', closeContextMenu);
+
     // 仅在 Tauri 环境下订阅原生拖放事件；非 Tauri 环境会 throw，被 catch 忽略
     try {
         const mod = await import('@tauri-apps/api/webview');
@@ -427,6 +586,12 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
+    window.removeEventListener('mousedown', onGlobalMouseDown, true);
+    window.removeEventListener('keydown', onGlobalKeyDown);
+    window.removeEventListener('blur', closeContextMenu);
+    window.removeEventListener('scroll', onGlobalScroll, true);
+    window.removeEventListener('resize', closeContextMenu);
+
     try { tauriDragUnlisten && tauriDragUnlisten(); } catch { /* noop */ }
     tauriDragUnlisten = null;
 });
@@ -573,38 +738,6 @@ onBeforeUnmount(() => {
     font-size: inherit;
 }
 
-/* 主操作按钮（"+项目" / "✕移除"）：hover 时显现，避开右上角的登记徽章 */
-.use-in-project-btn {
-    position: absolute;
-    top: 24px;
-    right: 4px;
-    font-size: 10px;
-    padding: 2px 6px;
-    border-radius: 10px;
-    border: none;
-    background: rgba(45, 127, 255, 0.75);
-    color: #fff;
-    cursor: pointer;
-    opacity: 0;
-    transition: opacity 0.15s;
-}
-
-.resource-item {
-    position: relative;
-}
-
-.resource-item:hover .use-in-project-btn {
-    opacity: 1;
-}
-
-.remove-from-project-btn {
-    background: rgba(205, 69, 69, 0.75);
-}
-
-.remove-from-project-btn:hover {
-    background: rgba(232, 79, 79, 0.92);
-}
-
 /* 缺失：半透明 + 红色描边 + 左上角角标 */
 .resource-item--missing {
     opacity: 0.72;
@@ -652,9 +785,8 @@ onBeforeUnmount(() => {
     align-items: center;
     gap: 2px;
     min-width: 0;
-    flex-shrink: 1;
+    flex: 1;
     overflow-x: auto;
-    max-width: 60%;
     padding: 2px 4px;
     border-radius: 6px;
     background: rgba(255, 255, 255, 0.04);
@@ -683,6 +815,25 @@ onBeforeUnmount(() => {
 .crumb-btn--active {
     color: #ffffff;
     background: rgba(100, 162, 255, 0.28);
+}
+
+/* 第一段：磁盘根路径，偏等宽 + 过长省略（title 里仍有全路径） */
+.crumb-btn--root {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 10px;
+    max-width: min(50vw, 420px);
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.crumb-root-placeholder {
+    font-size: 10px;
+    color: #7a8aa8;
+    font-style: italic;
+    padding: 2px 4px;
+    white-space: nowrap;
+    flex-shrink: 0;
 }
 
 .crumb-sep {
@@ -878,6 +1029,10 @@ onBeforeUnmount(() => {
     color: #1a2433;
 }
 
+.resources-panel--light .crumb-root-placeholder {
+    color: #8899b3;
+}
+
 .resources-panel--light .resources-count {
     color: #5a6b85;
 }
@@ -1011,6 +1166,132 @@ onBeforeUnmount(() => {
 }
 
 .resources-panel--light .resource-placeholder--missing {
+    color: #c53030;
+}
+
+/* --------------------------- 右键菜单 --------------------------- */
+.ctx-menu {
+    position: fixed;
+    z-index: 1000;
+    min-width: 200px;
+    background: #1e2028;
+    border: 1px solid #3e4451;
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
+    padding: 4px;
+    font-size: 12px;
+    color: #dbe5f8;
+    user-select: none;
+}
+
+.ctx-menu-header {
+    padding: 6px 10px 8px;
+    color: #c8d5ef;
+    font-weight: 600;
+    border-bottom: 1px solid #2b303b;
+    margin-bottom: 4px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ctx-menu-sub {
+    color: #97a4be;
+    font-weight: 400;
+    font-size: 11px;
+    margin-left: 4px;
+}
+
+.ctx-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 7px 10px;
+    border: none;
+    background: transparent;
+    color: inherit;
+    text-align: left;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 12px;
+}
+
+.ctx-menu-item:hover {
+    background: rgba(100, 162, 255, 0.18);
+    color: #ffffff;
+}
+
+.ctx-menu-item--danger {
+    color: #ffb3b3;
+}
+
+.ctx-menu-item--danger:hover {
+    background: rgba(205, 69, 69, 0.28);
+    color: #ffd5d5;
+}
+
+.ctx-menu-sep {
+    height: 1px;
+    margin: 4px 2px;
+    background: #2b303b;
+}
+
+.ctx-icon {
+    display: inline-block;
+    width: 14px;
+    text-align: center;
+    color: #97a4be;
+}
+
+.ctx-menu-item--danger .ctx-icon {
+    color: #e08787;
+}
+
+.ctx-menu-item:hover .ctx-icon {
+    color: inherit;
+}
+
+/* 浅色主题版本 */
+.resources-panel--light .ctx-menu {
+    background: #ffffff;
+    border-color: #d0d8e6;
+    color: #1a2433;
+    box-shadow: 0 12px 32px rgba(26, 43, 77, 0.18);
+}
+
+.resources-panel--light .ctx-menu-header {
+    color: #243247;
+    border-bottom-color: #e5ebf4;
+}
+
+.resources-panel--light .ctx-menu-sub {
+    color: #5a6b85;
+}
+
+.resources-panel--light .ctx-menu-item:hover {
+    background: rgba(45, 106, 224, 0.14);
+    color: #0f172a;
+}
+
+.resources-panel--light .ctx-menu-item--danger {
+    color: #c53030;
+}
+
+.resources-panel--light .ctx-menu-item--danger:hover {
+    background: rgba(200, 58, 58, 0.14);
+    color: #992020;
+}
+
+.resources-panel--light .ctx-menu-sep {
+    background: #e5ebf4;
+}
+
+.resources-panel--light .ctx-icon {
+    color: #8899b3;
+}
+
+.resources-panel--light .ctx-menu-item--danger .ctx-icon {
     color: #c53030;
 }
 </style>

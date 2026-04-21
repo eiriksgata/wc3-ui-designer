@@ -1,5 +1,6 @@
 import { ref, computed, watch, type Ref } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import type { ImageResource } from '../types';
 import { decodeTgaToDataUrl } from '../utils/tgaDecoder';
 
@@ -51,6 +52,19 @@ export interface MigrateResult {
     totalBytes: number;
     warnings: ImportWarning[];
 }
+
+/** 后端 `global_resource_import` 在处理每个文件前后会 emit 的事件 payload。 */
+export interface ImportProgressEvent {
+    /** 'begin' | 'item-start' | 'item-done' | 'item-error' | 'end' */
+    phase: string;
+    index: number;
+    total: number;
+    source: string;
+    message?: string;
+}
+
+/** 前端订阅用的事件名（与 Rust `IMPORT_PROGRESS_EVENT` 保持一致）。 */
+export const IMPORT_PROGRESS_EVENT = 'global-resource-import/progress';
 
 const mimeForExt = (ext: string): string => {
     switch (ext.toLowerCase()) {
@@ -137,17 +151,27 @@ export function useGlobalResourceLibrary(
     const loading = ref(false);
     const { resolve: resolvePreview, invalidate: invalidatePreview } = usePreviewResolver();
 
+    /**
+     * absPath -> previewUrl 的响应式映射。
+     *
+     * 之所以单独用一个 ref 而不是挂到 entry 上：`resources` 是 computed，每次
+     * entries 或此 map 变化都会重新 map 出新的 ImageResource 对象，保证面板上的
+     * 预览图能在 `fillPreviews` 逐个解码完成后"一路跟着更新"。
+     */
+    const previewMap = ref<Record<string, string>>({});
+
     /** 后端 entry -> 前端 ImageResource。
      *  - value = 绝对路径（也就是 widget.image 运行时使用的值）
      *  - relPath = 相对全局库根的 relPath（反斜杠风格）
      *  - localPath = 绝对路径（alias；保留给可能引用此字段的旧代码）
+     *  - previewUrl = 从 previewMap 动态取；没有就是空串（由面板显示"无预览"占位）
      */
     const toImageResource = (e: GlobalResourceEntry): ImageResource => ({
         label: e.name,
         value: e.absPath,
         relPath: e.relPath,
         localPath: e.absPath,
-        previewUrl: '',
+        previewUrl: previewMap.value[e.absPath] || '',
     });
 
     const resources = computed<ImageResource[]>(() =>
@@ -157,6 +181,7 @@ export function useGlobalResourceLibrary(
     const refresh = async () => {
         if (!root.value) {
             entries.value = [];
+            previewMap.value = {};
             return;
         }
         loading.value = true;
@@ -165,6 +190,13 @@ export function useGlobalResourceLibrary(
                 root: root.value,
             });
             entries.value = list || [];
+            // 清掉那些文件已经不在列表里的旧预览（例如刚被删了的条目）。
+            const alive = new Set((list || []).map((x) => x.absPath));
+            const next: Record<string, string> = {};
+            for (const [k, v] of Object.entries(previewMap.value)) {
+                if (alive.has(k)) next[k] = v;
+            }
+            previewMap.value = next;
             void fillPreviews();
         } catch (e) {
             console.error('[globalLib] list 失败：', e);
@@ -178,12 +210,34 @@ export function useGlobalResourceLibrary(
     const fillPreviews = async () => {
         const snapshot = entries.value.slice();
         for (const entry of snapshot) {
+            if (previewMap.value[entry.absPath]) continue; // 已有缓存
             const url = await resolvePreview(entry.absPath, entry.ext);
-            const cur = entries.value.find((x) => x.absPath === entry.absPath);
-            if (cur) {
-                (cur as any).previewUrl = url;
-            }
+            if (!url) continue;
+            // 直接 splice 一个新对象进去，保证 Vue 能检测到 Record 变化
+            previewMap.value = { ...previewMap.value, [entry.absPath]: url };
         }
+    };
+
+    /**
+     * 当前导入批次的进度状态（由 `global-resource-import/progress` 事件驱动）。
+     * - `total` 为 0 表示当前没有正在进行的导入。
+     * - `current` 是最近一次 `item-start` 的源路径（显示用）。
+     * - `doneCount` 累计 `item-done + item-error` 的数量。
+     */
+    const importProgress = ref<{
+        total: number;
+        done: number;
+        current: string;
+        errors: number;
+    }>({
+        total: 0,
+        done: 0,
+        current: '',
+        errors: 0,
+    });
+
+    const resetImportProgress = () => {
+        importProgress.value = { total: 0, done: 0, current: '', errors: 0 };
     };
 
     const importSources = async (opts: {
@@ -197,6 +251,54 @@ export function useGlobalResourceLibrary(
             message.value = msg;
             return { entries: [], warnings: [{ source: '', message: msg }] };
         }
+
+        resetImportProgress();
+        // 订阅后端进度事件——在 invoke 返回前保持监听，随后 unlisten。
+        let unlisten: null | (() => void) = null;
+        try {
+            unlisten = await listen<ImportProgressEvent>(IMPORT_PROGRESS_EVENT, (ev) => {
+                const p = ev.payload;
+                if (!p) return;
+                if (p.phase === 'begin') {
+                    importProgress.value = {
+                        total: p.total,
+                        done: 0,
+                        current: '',
+                        errors: 0,
+                    };
+                } else if (p.phase === 'item-start') {
+                    importProgress.value = {
+                        ...importProgress.value,
+                        total: p.total,
+                        current: p.source,
+                    };
+                } else if (p.phase === 'item-done') {
+                    importProgress.value = {
+                        ...importProgress.value,
+                        total: p.total,
+                        done: importProgress.value.done + 1,
+                    };
+                } else if (p.phase === 'item-error') {
+                    importProgress.value = {
+                        ...importProgress.value,
+                        total: p.total,
+                        done: importProgress.value.done + 1,
+                        errors: importProgress.value.errors + 1,
+                    };
+                } else if (p.phase === 'end') {
+                    importProgress.value = {
+                        ...importProgress.value,
+                        total: p.total,
+                        done: p.total,
+                        current: '',
+                    };
+                }
+            });
+        } catch (e) {
+            // 没拿到事件监听器也不致命，只是没有实时进度。
+            console.warn('[globalLib] 无法订阅导入进度事件：', e);
+        }
+
         try {
             const result = await invoke<ImportResult>('global_resource_import', {
                 req: {
@@ -219,15 +321,19 @@ export function useGlobalResourceLibrary(
             console.error('[globalLib] import 失败：', e);
             message.value = '导入全局资源库失败：' + (e?.message || String(e));
             return { entries: [], warnings: [{ source: '', message: String(e) }] };
+        } finally {
+            try { unlisten && unlisten(); } catch { /* noop */ }
+            // 让对话框能最后读到"100%"状态；由调用方在关闭时再重置。
         }
     };
 
-    /** 软删除一条全局库文件（会被搬去 .trash 目录，后端处理）。 */
+    /** 从全局库硬删除一条路径（文件或目录）。后端会直接 `fs::remove_*` 掉。 */
     const removeEntry = async (relPath: string): Promise<{ ok: boolean }> => {
         if (!root.value) return { ok: false };
         try {
             await invoke('global_resource_delete', { root: root.value, relPath });
             invalidatePreview();
+            previewMap.value = {};
             await refresh();
             return { ok: true };
         } catch (e: any) {
@@ -294,6 +400,7 @@ export function useGlobalResourceLibrary(
         root,
         () => {
             invalidatePreview();
+            previewMap.value = {};
             void refresh();
         },
         { immediate: true },
@@ -304,6 +411,8 @@ export function useGlobalResourceLibrary(
         resources,
         warnings,
         loading,
+        importProgress,
+        resetImportProgress,
         refresh,
         importSources,
         removeEntry,
