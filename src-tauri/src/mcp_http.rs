@@ -190,6 +190,16 @@ impl UiDesignerMcp {
     }
 }
 
+/// schemars 1.x 对 `serde_json::Value` 生成 `items: true`（布尔 schema），
+/// OpenAI/Copilot API 要求 `items` 必须是对象，因此用此函数显式生成 `items: {}`。
+fn json_value_array_schema(_gen: &mut SchemaGenerator) -> Schema {
+    serde_json::from_value(serde_json::json!({
+        "type": "array",
+        "items": {}
+    }))
+    .expect("static json_value_array_schema is valid")
+}
+
 #[derive(Debug, Deserialize, JsonSchema)]
 struct UiOpenProjectArgs {
     #[serde(rename = "projectPath")]
@@ -210,6 +220,8 @@ struct UiImportFromSidecarArgs {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 struct UiApplyActionsArgs {
+    /// 要执行的操作列表，每项是一个 JSON 对象
+    #[schemars(schema_with = "json_value_array_schema")]
     actions: Vec<serde_json::Value>,
     #[serde(default)]
     dry_run: Option<bool>,
@@ -294,6 +306,8 @@ struct UiRuntimeCallArgs {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 struct UiRuntimeTransactionArgs {
+    /// 要执行的操作列表，每项是一个 JSON 对象
+    #[schemars(schema_with = "json_value_array_schema")]
     actions: Vec<serde_json::Value>,
     #[serde(default)]
     validate_after_apply: Option<bool>,

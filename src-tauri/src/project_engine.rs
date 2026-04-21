@@ -106,7 +106,7 @@ impl ProjectEngine {
     pub async fn open_project(&mut self, project_path: String) -> Result<ProjectSnapshot, String> {
         let raw = fs::read_to_string(&project_path)
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| format!("读取项目文件失败 {}: {}", project_path, e))?;
         let parsed: serde_json::Value =
             serde_json::from_str(&raw).map_err(|e| e.to_string())?;
         // schema 2.0.0 起强制校验版本——和 frontend useProjectFile 的 MIN_SUPPORTED_SCHEMA 保持一致
@@ -135,10 +135,20 @@ impl ProjectEngine {
         let path = project_path
             .or_else(|| self.project_path.as_ref().map(|p| p.to_string_lossy().to_string()))
             .ok_or_else(|| "projectPath is required".to_string())?;
+
+        // 允许传入尚不存在的目录路径：先创建父目录，避免 Windows 下 os error 3。
+        if let Some(parent) = Path::new(&path).parent() {
+            if !parent.as_os_str().is_empty() {
+                fs::create_dir_all(parent)
+                    .await
+                    .map_err(|e| format!("创建项目目录失败 {}: {}", parent.display(), e))?;
+            }
+        }
+
         let data = serde_json::to_string_pretty(&self.project).map_err(|e| e.to_string())?;
         fs::write(&path, data)
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| format!("写入项目文件失败 {}: {}", path, e))?;
         self.project_path = Some(PathBuf::from(&path));
         Ok(json!({ "path": path }))
     }
@@ -162,7 +172,7 @@ impl ProjectEngine {
     ) -> Result<ProjectSnapshot, String> {
         let raw = fs::read_to_string(&sidecar_path)
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| format!("读取 sidecar 失败 {}: {}", sidecar_path, e))?;
         let sidecar: serde_json::Value =
             serde_json::from_str(&raw).map_err(|e| format!("sidecar JSON 解析失败: {}", e))?;
 
@@ -954,9 +964,19 @@ impl ProjectEngine {
         } else {
             self.export_structured_json()
         };
+
+        // 导出目标目录可能不存在，先创建父目录，避免 os error 3。
+        if let Some(parent) = Path::new(output_path).parent() {
+            if !parent.as_os_str().is_empty() {
+                fs::create_dir_all(parent)
+                    .await
+                    .map_err(|e| format!("创建导出目录失败 {}: {}", parent.display(), e))?;
+            }
+        }
+
         fs::write(output_path, output)
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| format!("写入导出文件失败 {}: {}", output_path, e))?;
         Ok(json!({
             "outputFiles": [output_path],
             "pluginId": pid,
