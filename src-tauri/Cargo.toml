@@ -31,7 +31,12 @@ windows = { version = "0.56", features = [
     "Win32_UI_WindowsAndMessaging",
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_System_Diagnostics_ToolHelp",
+    "Win32_Storage_FileSystem",
 ] }
+# 全局资源库：图像通用解码/编码 + BLP 编解码 + base64
+image = "0.24"
+image-blp = "1.2"
+base64 = "0.22"
 rmcp = { version = "1.5", features = ["server", "macros", "schemars", "transport-streamable-http-server"] }
 axum = { version = "0.8", features = ["macros", "http1"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "signal"] }

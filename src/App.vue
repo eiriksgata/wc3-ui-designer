@@ -134,7 +134,7 @@
                   <span>{{ w.text }}</span>
                   <div class="combo-arrow">▼</div>
                 </template>
-                <template v-else>
+                <template v-else-if="shouldRenderOwnText(w)">
                   <span>{{ w.text }}</span>
                 </template>
                 <!-- 右下角拖动改变大小：仅在控件被选中且未锁定时显示 -->
@@ -195,6 +195,7 @@
         @save="handleSaveSettings"
         @reset="handleResetSettings"
         @set-theme="setAppTheme"
+        @change-global-resource-root="onGlobalRootChangeRequest"
       />
 
       <!-- 导出面板 -->
@@ -222,10 +223,17 @@
       <!-- 底部资源管理器 -->
       <ResourcesPanel :height="resourcesHeight" :theme-name="activeThemeName" :collapsed="isResourcesCollapsed"
         :image-resources="imageResources"
+        :global-resources="globalResources"
+        :global-root-configured="!!settings.globalResourceRootPath"
         :is-resources-drag-over="isResourcesDragOver" :hover-preview="hoverPreview" v-model:panelRef="resourcesPanelRef"
         v-model:gridRef="resourcesGridRef" @import-resources="onImportResourcesClick"
+        @import-to-global="onImportToGlobalClick"
+        @use-in-project="onUseGlobalResourceInProject"
+        @delete-from-global="onDeleteFromGlobal"
+        @open-settings="showSettings = true"
         @apply-resource="applyResourceToSelection" @drag-enter="onResourcesDragEnter" @drag-over="onResourcesDragOver"
-        @drag-leave="onResourcesDragLeave" @drop="onResourcesDrop" @hover-enter="onResourceMouseEnter"
+        @drag-leave="onResourcesDragLeave" @drop="onResourcesDrop" @drop-paths="onTauriDropPaths"
+        @hover-enter="onResourceMouseEnter"
         @hover-move="onResourceMouseMove" @hover-leave="onResourceMouseLeave"
         @toggle-collapse="toggleResourcesCollapsed" />
       <!-- 隐藏的项目文件选择器（浏览器 / Tauri WebView 通用） -->
@@ -264,6 +272,39 @@
     <KeyboardShortcutsDialog v-model:visible="showKeyboardShortcuts" />
     <!-- MCP 使用说明对话框 -->
     <McpUsageDialog v-model:visible="showMcpUsageGuide" />
+
+    <!-- 首次启动：引导用户配置全局资源库位置 -->
+    <GlobalLibraryFirstRunDialog v-model:show="showGlrFirstRun"
+      @picked="onGrlFirstRunPicked"
+      @later="glrDeferredInSession = true" />
+
+    <!-- 导入到全局资源库对话框 -->
+    <ImportResourceDialog v-model:show="showImportToGlobalDialog"
+      :initial-sources="importToGlobalSources"
+      :initial-sub-dir="importToGlobalSubDir"
+      :default-convert-to-blp="settings.defaultConvertToBlp"
+      :root-path="settings.globalResourceRootPath"
+      :warnings="importToGlobalWarnings"
+      :busy="importToGlobalBusy"
+      @confirm="onImportToGlobalConfirm" />
+
+    <!-- 切换全局库路径时的迁移选择 -->
+    <v-dialog v-model="showMigrateDialog" width="520" persistent scrim="rgba(9, 11, 15, 0.72)">
+      <v-card class="confirm-card" rounded="xl" elevation="12">
+        <v-card-title class="confirm-card-title">切换全局资源库路径</v-card-title>
+        <v-card-text class="confirm-card-message">
+          <div style="margin-bottom: 8px;">旧路径：<code>{{ migrateOldPath }}</code></div>
+          <div style="margin-bottom: 12px;">新路径：<code>{{ migrateNewPath }}</code></div>
+          <div>如何处理旧库中的资源？</div>
+        </v-card-text>
+        <v-card-actions class="confirm-card-actions" style="gap: 8px;">
+          <v-btn variant="text" color="secondary" @click="onMigrateCancel" :disabled="migrateBusy">取消</v-btn>
+          <v-btn variant="outlined" @click="onMigratePointerOnly" :disabled="migrateBusy">只切换指针</v-btn>
+          <v-btn variant="flat" color="primary" @click="onMigrateMoveFiles"
+            :loading="migrateBusy" :disabled="migrateBusy">迁移旧文件到新路径</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
     </div>
   </v-app>
 </template>
@@ -311,6 +352,11 @@ import { useActionApi } from './composables/useActionApi';
 import { useMcpRuntimeBridge } from './composables/useMcpRuntimeBridge';
 import { useProposals } from './composables/useProposals';
 import ProposalPanel from './components/ProposalPanel.vue';
+import GlobalLibraryFirstRunDialog from './components/GlobalLibraryFirstRunDialog.vue';
+import ImportResourceDialog from './components/ImportResourceDialog.vue';
+import { useGlobalResourceLibrary, toProjectValueFromGlobalRel } from './composables/useGlobalResourceLibrary';
+import { getWidgetAlign } from './types';
+import { UIBackgrounds } from './constants/templatePresets';
 
 // 使用组合式函数
 const { showSettings, settings, saveSettings, resetSettings, loadSettings } = useSettings();
@@ -438,7 +484,8 @@ const {
   onResourcesDragEnter,
   onResourcesDragOver,
   onResourcesDragLeave,
-  onResourcesDrop,
+  onResourcesDrop: onResourcesDropProject,
+  onTauriDropPaths: onTauriDropPathsProject,
   onImportResourcesClick: onImportResourcesClickWrapper,
   refreshResourcePreviewsFromLocal,
   applyResourceToSelection,
@@ -447,10 +494,192 @@ const {
   onResourceMouseLeave,
 } = resourceManager;
 
-// 导入资源点击函数
-const onImportResourcesClick = () => {
-  onImportResourcesClickWrapper();
+// 导入资源点击函数（透传 basePath 等选项）
+const onImportResourcesClick = (opts?: { basePath?: string }) => {
+  onImportResourcesClickWrapper(opts);
 };
+
+// 统一的 drop 调度：根据 ResourcesPanel 透传的 scope 决定落到"当前项目"还是"全局库"
+const onResourcesDrop = (ev: DragEvent, opts?: { basePath?: string; scope?: 'project' | 'global' }) => {
+  if (opts?.scope === 'global') {
+    // 浏览器 DataTransfer 中不一定含可用的绝对路径；这里不做处理，
+    // 用户应优先通过"导入到全局库…"按钮或 Tauri 原生拖放来导入。
+    const names: string[] = [];
+    try {
+      const files = ev.dataTransfer?.files;
+      if (files) {
+        for (let i = 0; i < files.length; i++) names.push((files[i] as any).path || files[i].name);
+      }
+    } catch { /* noop */ }
+    const abs = names.filter((n) => /[\\/:]/.test(n));
+    if (!abs.length) {
+      message.value = '请改用"导入到全局库…"或直接从资源管理器拖入文件（Tauri 原生拖放）';
+      return;
+    }
+    importToGlobalSources.value = abs;
+    importToGlobalSubDir.value = opts?.basePath || '';
+    importToGlobalWarnings.value = [];
+    showImportToGlobalDialog.value = true;
+    return;
+  }
+  onResourcesDropProject(ev, opts);
+};
+
+const onTauriDropPaths = (paths: string[], opts?: { basePath?: string; scope?: 'project' | 'global' }) => {
+  if (opts?.scope === 'global') {
+    if (!settings.value.globalResourceRootPath) {
+      showGlrFirstRun.value = true;
+      return;
+    }
+    importToGlobalSources.value = paths.slice();
+    importToGlobalSubDir.value = opts?.basePath || '';
+    importToGlobalWarnings.value = [];
+    showImportToGlobalDialog.value = true;
+    return;
+  }
+  onTauriDropPathsProject(paths, opts);
+};
+
+// ============================== 全局资源库 ==============================
+// 注意：root 是 computed 的，所以 settings.globalResourceRootPath 变化会触发 refresh。
+const globalLibRoot = computed(() => settings.value.globalResourceRootPath || '');
+const globalLib = useGlobalResourceLibrary(globalLibRoot, message);
+const {
+  resources: globalResources,
+  importSources: globalLibImport,
+  removeEntry: globalLibRemove,
+  migrate: globalLibMigrate,
+  useInProject: globalLibUseInProject,
+} = globalLib;
+
+// ---- 首次引导 ----
+const showGlrFirstRun = ref(false);
+// 用户点"稍后再说"后，本会话不再自动弹
+const glrDeferredInSession = ref(false);
+
+const onGrlFirstRunPicked = (payload: { path: string; result?: { message: string } }) => {
+  if (!payload.path) {
+    if (payload.result) {
+      message.value = payload.result.message;
+    }
+    return;
+  }
+  settings.value.globalResourceRootPath = payload.path;
+  saveSettings();
+  message.value = `全局资源库已设置：${payload.path}`;
+};
+
+// ---- 导入到全局库 ----
+const showImportToGlobalDialog = ref(false);
+const importToGlobalSources = ref<string[]>([]);
+const importToGlobalSubDir = ref<string>('');
+const importToGlobalWarnings = ref<{ source: string; message: string }[]>([]);
+const importToGlobalBusy = ref(false);
+
+const onImportToGlobalClick = async (opts?: { basePath?: string }) => {
+  if (!settings.value.globalResourceRootPath) {
+    showGlrFirstRun.value = true;
+    return;
+  }
+  // 先让用户选文件，再打开对话框
+  try {
+    const picked = await tauriOpen({
+      title: '选择要导入到全局库的图片资源',
+      multiple: true,
+      filters: [
+        { name: '图片资源', extensions: ['blp', 'png', 'tga', 'bmp', 'jpg', 'jpeg'] },
+      ],
+    });
+    if (!picked) return;
+    const arr = Array.isArray(picked) ? picked : [picked];
+    importToGlobalSources.value = arr;
+    importToGlobalSubDir.value = opts?.basePath || '';
+    importToGlobalWarnings.value = [];
+    showImportToGlobalDialog.value = true;
+  } catch (e) {
+    console.warn('选择文件失败', e);
+  }
+};
+
+const onImportToGlobalConfirm = async (payload: {
+  sources: string[];
+  subDir: string;
+  convertToBlp: boolean;
+  overwrite: boolean;
+}) => {
+  importToGlobalBusy.value = true;
+  try {
+    const result = await globalLibImport({
+      sources: payload.sources,
+      subDir: payload.subDir,
+      convertToBlp: payload.convertToBlp,
+      overwrite: payload.overwrite,
+    });
+    importToGlobalWarnings.value = result.warnings || [];
+    if (!result.warnings || result.warnings.length === 0) {
+      showImportToGlobalDialog.value = false;
+    }
+  } finally {
+    importToGlobalBusy.value = false;
+  }
+};
+
+// ---- 把全局库条目登记到当前项目资源 ----
+const onUseGlobalResourceInProject = (res: { label: string; value: string; localPath?: string; previewUrl?: string }) => {
+  const entry = globalLibUseInProject(res as any, imageResources as any);
+  message.value = `已加入项目资源：${entry.value}`;
+};
+
+// ---- 从全局库删除 ----
+const onDeleteFromGlobal = async (res: { value: string; label: string }) => {
+  if (!confirm(`确定要从全局资源库删除 "${res.label}" 吗？（会移动到 .trash 目录，可手动找回）`)) return;
+  await globalLibRemove(res.value);
+};
+
+// ---- 切换全局库路径：迁移对话框 ----
+const showMigrateDialog = ref(false);
+const migrateOldPath = ref('');
+const migrateNewPath = ref('');
+const migrateBusy = ref(false);
+
+const onGlobalRootChangeRequest = (payload: { oldPath: string; newPath: string }) => {
+  migrateOldPath.value = payload.oldPath;
+  migrateNewPath.value = payload.newPath;
+  showMigrateDialog.value = true;
+};
+
+const onMigrateCancel = () => {
+  showMigrateDialog.value = false;
+  // 回滚 settings 里已经改过的字段
+  settings.value.globalResourceRootPath = migrateOldPath.value;
+};
+
+const onMigratePointerOnly = () => {
+  settings.value.globalResourceRootPath = migrateNewPath.value;
+  saveSettings();
+  showMigrateDialog.value = false;
+  message.value = '已切换全局库路径（旧文件保留原地，请自行处理）';
+};
+
+const onMigrateMoveFiles = async () => {
+  migrateBusy.value = true;
+  try {
+    const result = await globalLibMigrate(migrateOldPath.value, migrateNewPath.value, 'move');
+    settings.value.globalResourceRootPath = migrateNewPath.value;
+    saveSettings();
+    const warnCount = result.warnings?.length || 0;
+    message.value = warnCount
+      ? `已迁移 ${result.movedCount} 个文件，${warnCount} 项有告警`
+      : `已迁移 ${result.movedCount} 个文件到新路径`;
+  } finally {
+    migrateBusy.value = false;
+    showMigrateDialog.value = false;
+  }
+};
+
+// 避免 unused 报错：toProjectValueFromGlobalRel 导出给 composable 内部使用，
+// 这里留一个引用以便后续直接在 App 里构造项目资源值时复用。
+void toProjectValueFromGlobalRel;
 
 // 使用导出功能 composable
 // 注意：saveProjectToFile 将在下面定义后传入
@@ -503,6 +732,7 @@ const baseWidgetTypes = [
   { id: 'panel', label: '面板', baseType: 'panel' },
   { id: 'button', label: '按钮', baseType: 'button' },
   { id: 'text', label: '文本', baseType: 'text' },
+  { id: 'dialog', label: '对话框', baseType: 'panel' },
   { id: 'model', label: '模型', baseType: 'model' },
 ];
 
@@ -918,82 +1148,126 @@ const widgetRectStyle = (w) => ({
   height: `${w.h}px`,
 });
 
-const widgetVisualStyle = (w) => {
-  const style = {};
-  const res = w.image
-    ? imageResources.value.find((r) => r.value === w.image)
-    : null;
+// 是否该控件有一个 Text 子节点来承载文字（按模板 Button 的组合语义：
+// Button.ts 里的文字其实是内嵌的 Text 子框架渲染的）。
+const hasTextChild = (w) => {
+    if (!w) return false;
+    const base = baseTypeOf(w.type);
+    if (base !== 'button' && base !== 'panel') return false;
+    return widgetsList.value.some(
+        (c) => c.parentId === w.id && baseTypeOf(c.type) === 'text',
+    );
+};
 
-  // 有资源：使用资源贴图作为背景
-  if (res && res.previewUrl) {
-    style.backgroundImage = `url(${res.previewUrl})`;
-    style.backgroundSize = '100% 100%';
-    style.backgroundPosition = 'center center';
-    style.backgroundRepeat = 'no-repeat';
-    // 即便有背景图，如果是文本类控件，仍然应用对齐方式
-  }
+// 该控件自身是否需要在画布上"画文字"。
+// - text 类型：总是。
+// - Button / Panel：仅当没有 Text 子节点时（老项目 / 未迁移的 legacy 兜底）。
+const shouldRenderOwnText = (w) => {
+    const base = baseTypeOf(w.type);
+    if (base === 'text') return true;
+    if (base === 'button' || base === 'panel') {
+        return !hasTextChild(w) && typeof w.text === 'string' && w.text.length > 0;
+    }
+    // checkbox / combobox 等历史类型保持原有行为：在模板中单独渲染文字
+    return true;
+};
 
-  // 无资源时：使用一个较浅的类型背景色，方便在编辑器里看出控件区域
-  if (!res || !res.previewUrl) {
-    const type = w.type;
-    if (type === 'button') {
-      style.backgroundColor = '#2e7d32';
-    } else if (type === 'label' || baseTypeOf(type) === 'text') {
-      style.backgroundColor = '#424242';
-    } else if (type === 'input') {
-      style.backgroundColor = '#212121';
-    } else if (type === 'checkbox') {
-      style.backgroundColor = '#37474f';
-    } else if (type === 'combobox') {
-      style.backgroundColor = '#283593';
+// alpha (0-255) → opacity (0-1)
+const alphaToOpacity = (a) => {
+    if (typeof a !== 'number' || isNaN(a)) return 1;
+    return Math.max(0, Math.min(1, a / 255));
+};
+
+// 把 padding 对象折算成 CSS 字符串
+const paddingToCss = (p) => {
+    if (!p || typeof p !== 'object') return null;
+    const t = Number(p.top) || 0;
+    const r = Number(p.right) || 0;
+    const b = Number(p.bottom) || 0;
+    const l = Number(p.left) || 0;
+    if (t === 0 && r === 0 && b === 0 && l === 0) return null;
+    return `${t}px ${r}px ${b}px ${l}px`;
+};
+
+const applyTextAlignStyle = (style, w) => {
+    const { h, v } = getWidgetAlign(w);
+    style.alignItems =
+        v === 'top' ? 'flex-start' : v === 'bottom' ? 'flex-end' : 'center';
+    style.justifyContent =
+        h === 'left' ? 'flex-start' : h === 'right' ? 'flex-end' : 'center';
+    if (typeof w.fontSize === 'number' && w.fontSize > 0) {
+        style.fontSize = `${w.fontSize}px`;
+    }
+    if (typeof w.textColor === 'string' && /^[0-9A-Fa-f]{6}$/.test(w.textColor)) {
+        style.color = `#${w.textColor}`;
+    }
+    // 描边预览：outlineSize 大于 0 时以 text-shadow 模拟，方便用户确认配置
+    const outline = Number(w.outlineSize) || 0;
+    if (outline > 0) {
+        const s = Math.min(3, Math.max(1, Math.round(outline)));
+        style.textShadow = `-${s}px -${s}px 0 #000, ${s}px -${s}px 0 #000, -${s}px ${s}px 0 #000, ${s}px ${s}px 0 #000`;
     } else {
-      style.backgroundColor = 'rgba(255,255,255,0.04)';
+        style.textShadow = 'none';
     }
-  }
+};
 
-  // 文本对齐 / 字体大小在编辑器中的可视化（只针对文本基础类型）
-  if (baseTypeOf(w.type) === 'text') {
-    const align = w.textAlign || 'top_left';
-    // 垂直方向：alignItems，水平方向：justifyContent
-    if (align === 'top_left') {
-      style.alignItems = 'flex-start';
-      style.justifyContent = 'flex-start';
-    } else if (align === 'top') {
-      style.alignItems = 'flex-start';
-      style.justifyContent = 'center';
-    } else if (align === 'top_right') {
-      style.alignItems = 'flex-start';
-      style.justifyContent = 'flex-end';
-    } else if (align === 'left') {
-      style.alignItems = 'center';
-      style.justifyContent = 'flex-start';
-    } else if (align === 'center') {
-      style.alignItems = 'center';
-      style.justifyContent = 'center';
-    } else if (align === 'right') {
-      style.alignItems = 'center';
-      style.justifyContent = 'flex-end';
-    } else if (align === 'bottom_left') {
-      style.alignItems = 'flex-end';
-      style.justifyContent = 'flex-start';
-    } else if (align === 'bottom') {
-      style.alignItems = 'flex-end';
-      style.justifyContent = 'center';
-    } else if (align === 'bottom_right') {
-      style.alignItems = 'flex-end';
-      style.justifyContent = 'flex-end';
+const applyBackgroundStyle = (style, w) => {
+    // 优先级：backgroundPreset > 资源图片 > 类型保底色
+    const presetKey = typeof w.backgroundPreset === 'string' ? w.backgroundPreset : '';
+    const presetValue = presetKey && UIBackgrounds[presetKey] != null ? UIBackgrounds[presetKey] : '';
+    const imageValue = presetValue || w.image || '';
+    const res = imageValue
+        ? imageResources.value.find((r) => r.value === imageValue)
+        : null;
+
+    if (res && res.previewUrl) {
+        style.backgroundImage = `url(${res.previewUrl})`;
+        style.backgroundSize = '100% 100%';
+        style.backgroundPosition = 'center center';
+        style.backgroundRepeat = 'no-repeat';
+        return;
     }
 
-    // 字体大小（仅用于编辑器预览，真实效果以游戏内为准）
-    const size = w.fontSize || 14;
-    style.fontSize = `${size}px`;
-    // 描边在编辑器中不再强制预览，避免过于粗糙的效果；
-    // 真实描边由游戏中的 Frame.Text:SetOutLine 负责。
-    style.WebkitTextStrokeWidth = '0px';
-    style.textShadow = 'none';
-  }
+    const type = w.type;
+    const base = baseTypeOf(type);
+    if (base === 'button') {
+        style.backgroundColor = '#2e7d32';
+    } else if (type === 'label' || base === 'text') {
+        style.backgroundColor = '#424242';
+    } else if (type === 'input') {
+        style.backgroundColor = '#212121';
+    } else if (type === 'checkbox') {
+        style.backgroundColor = '#37474f';
+    } else if (type === 'combobox') {
+        style.backgroundColor = '#283593';
+    } else if (base === 'panel' || type === 'dialog') {
+        style.backgroundColor = 'rgba(30,30,40,0.4)';
+    } else {
+        style.backgroundColor = 'rgba(255,255,255,0.04)';
+    }
+};
 
-  return style;
+const widgetVisualStyle = (w) => {
+    const style = {};
+
+    applyBackgroundStyle(style, w);
+
+    // 透明度（alpha 0-255 映射到 CSS opacity；undefined 时保留不透明）
+    if (typeof w.alpha === 'number' && w.alpha >= 0 && w.alpha <= 255) {
+        style.opacity = alphaToOpacity(w.alpha);
+    }
+
+    // 内边距：text / 自承载文字的 Button|Panel 才应用，避免 Panel 当纯容器时吃掉子控件可点区
+    if (shouldRenderOwnText(w)) {
+        const pad = paddingToCss(w.padding);
+        style.padding = pad ?? '2px 4px';
+        applyTextAlignStyle(style, w);
+    } else {
+        // 纯容器：不要 padding 也不要 align-items，避免内部 <span> 被强制布局
+        style.padding = '0';
+    }
+
+    return style;
 };
 
 // applyResourceToSelection 已移动到 useResourceManager
@@ -1260,6 +1534,13 @@ onMounted(() => {
   loadSettings();
   loadRecentProjects();
   loadUiZoom();
+
+  // 首次启动检查：若未配置全局资源库路径，弹引导对话框
+  nextTick(() => {
+    if (!settings.value.globalResourceRootPath && !glrDeferredInSession.value) {
+      showGlrFirstRun.value = true;
+    }
+  });
 
   onBeforeUnmount(() => {
     window.removeEventListener('resize', handleResize);
@@ -2269,18 +2550,23 @@ label {
   z-index: 2;
   border-radius: 4px;
   border: 1px solid #666;
-  /* 线框颜色调淡一些 */
   color: #fff;
   font-size: 12px;
   display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 2px 4px;
+  /* align-items / justify-content / padding 不再强制居中；
+     由 widgetVisualStyle() 根据 textAlignH/textAlignV/padding 逐控件决定，
+     否则 Button 的文字永远被强行居中（见模板 Button.ts 的 Text.setAlignment）。 */
   -webkit-user-select: none;
   user-select: none;
   box-sizing: border-box;
   background: transparent;
-  /* 默认无背景，具体颜色由 widgetVisualStyle 决定 */
+}
+
+/* 承载文字的控件（text / 无 Text 子节点的 Button-Panel）默认给一个保底对齐，
+   避免没有 textAlignH/V 时文字塌到左上角。具体对齐仍以 widgetVisualStyle 为准。 */
+.widget > span {
+  display: inline-block;
+  line-height: 1.2;
 }
 
 /* 设置对话框样式 */

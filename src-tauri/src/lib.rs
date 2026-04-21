@@ -1,3 +1,4 @@
+mod global_resources;
 mod mcp_http;
 mod project_engine;
 
@@ -251,6 +252,16 @@ pub fn run() {
             stop_mcp_server,
             get_mcp_server_status,
             mcp_runtime_bridge_reply,
+            // 全局资源库（跨项目共享，路径由用户在设置里自行配置）
+            global_resources::global_resource_set_root,
+            global_resources::global_resource_list,
+            global_resources::global_resource_import,
+            global_resources::global_resource_delete,
+            global_resources::global_resource_migrate,
+            global_resources::blp_decode_to_png_base64,
+            global_resources::path_exists,
+            global_resources::disk_free_space,
+            global_resources::read_file_as_base64,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

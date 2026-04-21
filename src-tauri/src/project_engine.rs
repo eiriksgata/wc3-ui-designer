@@ -530,28 +530,20 @@ impl ProjectEngine {
                     let widget_type = payload
                         .get("widgetType")
                         .and_then(|x| x.as_str())
-                        .unwrap_or("panel");
-                    let id = next_id;
-                    next_id += 1;
-                    let mut widget = json!({
-                        "id": id,
-                        "name": format!("{}_{}", widget_type, id),
-                        "type": widget_type,
-                        "parentId": serde_json::Value::Null,
-                        "x": 960,
-                        "y": 540,
-                        "w": 100,
-                        "h": 100,
-                        "enable": true,
-                        "visible": true,
-                        "locked": false,
-                        "text": "",
-                        "image": ""
-                    });
-                    if let Some(over) = payload.get("overrides") {
-                        shallow_merge(&mut widget, over.clone());
+                        .unwrap_or("panel")
+                        .to_string();
+                    let overrides = payload
+                        .get("overrides")
+                        .cloned()
+                        .unwrap_or(json!({}));
+                    let created = build_composite_widgets(
+                        &widget_type,
+                        &overrides,
+                        &mut next_id,
+                    );
+                    for w in created {
+                        working.widgets.push(w);
                     }
-                    working.widgets.push(widget);
                     self.push_audit(&session_id, &action_id, action_type, dry_run);
                     applied += 1;
                     return Ok(());
@@ -924,6 +916,232 @@ fn shallow_merge(base: &mut serde_json::Value, patch: serde_json::Value) {
     for (k, v) in b {
         a.insert(k, v);
     }
+}
+
+/// 构造一条默认 widget（与前端 `useWidgets.buildWidget` 的语义对齐）。
+/// 不处理 `overrides` 合并，调用方负责。
+fn make_default_widget(
+    widget_type: &str,
+    id: i64,
+    parent_id: Option<i64>,
+) -> serde_json::Value {
+    let default_text = match widget_type {
+        "text" => "文本",
+        "button" => "按钮",
+        _ => "",
+    };
+    let parent_val = match parent_id {
+        Some(p) => json!(p),
+        None => serde_json::Value::Null,
+    };
+    json!({
+        "id": id,
+        "name": format!("{}_{}", widget_type, id),
+        "type": widget_type,
+        "parentId": parent_val,
+        "x": 960,
+        "y": 540,
+        "w": 100,
+        "h": 100,
+        "enable": true,
+        "visible": true,
+        "locked": false,
+        "font": "",
+        "fontSize": 14,
+        "outlineSize": 0,
+        "textAlignH": "left",
+        "textAlignV": "top",
+        "text": default_text,
+        "image": "",
+        "clickImage": "",
+        "hoverImage": "",
+        "draggable": false,
+        "checked": false,
+        "selectedIndex": 0,
+    })
+}
+
+fn get_i64(v: &serde_json::Value, k: &str, default: i64) -> i64 {
+    v.get(k).and_then(|x| x.as_i64()).unwrap_or(default)
+}
+
+fn get_str<'a>(v: &'a serde_json::Value, k: &str) -> Option<&'a str> {
+    v.get(k).and_then(|x| x.as_str())
+}
+
+/// 按照 `widgetType` 生成一条或一组 widgets（组合控件时带上子节点），
+/// 与前端 [`useWidgets.addWidget`](src/composables/useWidgets.ts) 行为完全一致：
+/// - `button` 追加一个 `type='text'` 的居中 label 子节点
+/// - `dialog` 展开成 `panel + title(text) + 两个 button + 两个 label`
+/// - 其他 type 只返回单个 widget
+///
+/// `next_id` 是进出参数（按引用自增），保证批量调用时 id 不冲突。
+fn build_composite_widgets(
+    widget_type: &str,
+    overrides: &serde_json::Value,
+    next_id: &mut i64,
+) -> Vec<serde_json::Value> {
+    match widget_type {
+        "dialog" => build_dialog_tree(overrides, next_id),
+        "button" => build_button_tree(overrides, next_id),
+        _ => {
+            let id = *next_id;
+            *next_id += 1;
+            let mut w = make_default_widget(widget_type, id, None);
+            shallow_merge(&mut w, overrides.clone());
+            // 强制保留 id 不被 overrides 覆盖（冲突隐患）
+            if let Some(o) = w.as_object_mut() {
+                o.insert("id".into(), json!(id));
+            }
+            vec![w]
+        }
+    }
+}
+
+fn build_button_tree(
+    overrides: &serde_json::Value,
+    next_id: &mut i64,
+) -> Vec<serde_json::Value> {
+    let btn_id = *next_id;
+    *next_id += 1;
+    let label_id = *next_id;
+    *next_id += 1;
+
+    let mut btn = make_default_widget("button", btn_id, None);
+    shallow_merge(&mut btn, overrides.clone());
+    if let Some(o) = btn.as_object_mut() {
+        o.insert("id".into(), json!(btn_id));
+        o.insert("type".into(), json!("button"));
+        // parentId 允许通过 overrides 设定外层 parent，否则保持 null
+    }
+
+    let bx = get_i64(&btn, "x", 960);
+    let by = get_i64(&btn, "y", 540);
+    let bw = get_i64(&btn, "w", 100);
+    let bh = get_i64(&btn, "h", 100);
+    let btn_name = get_str(&btn, "name").unwrap_or("button").to_string();
+    let btn_text = get_str(&btn, "text").unwrap_or("按钮").to_string();
+
+    let mut label = make_default_widget("text", label_id, Some(btn_id));
+    if let Some(o) = label.as_object_mut() {
+        o.insert("x".into(), json!(bx));
+        o.insert("y".into(), json!(by));
+        o.insert("w".into(), json!(bw));
+        o.insert("h".into(), json!(bh));
+        o.insert("text".into(), json!(btn_text));
+        o.insert("textAlignH".into(), json!("center"));
+        o.insert("textAlignV".into(), json!("middle"));
+        o.insert("fontSize".into(), json!(14));
+        o.insert("textColor".into(), json!("FFFFFF"));
+        o.insert("name".into(), json!(format!("{}_label", btn_name)));
+    }
+
+    vec![btn, label]
+}
+
+fn build_dialog_tree(
+    overrides: &serde_json::Value,
+    next_id: &mut i64,
+) -> Vec<serde_json::Value> {
+    let panel_id = *next_id;
+    *next_id += 1;
+
+    let mut panel = make_default_widget("panel", panel_id, None);
+    if let Some(o) = panel.as_object_mut() {
+        // Dialog 默认样式
+        o.insert("w".into(), json!(320));
+        o.insert("h".into(), json!(220));
+        o.insert("templateKind".into(), json!("Dialog"));
+        o.insert("showTitleBar".into(), json!(true));
+        o.insert("titleBarHeight".into(), json!(28));
+        o.insert("title".into(), json!("对话框"));
+        o.insert("titleColor".into(), json!("FFCC00"));
+        o.insert("showCloseButton".into(), json!(true));
+        o.insert("backgroundPreset".into(), json!("DIALOG"));
+    }
+    shallow_merge(&mut panel, overrides.clone());
+    if let Some(o) = panel.as_object_mut() {
+        o.insert("id".into(), json!(panel_id));
+        o.insert("type".into(), json!("panel"));
+    }
+
+    let panel_x = get_i64(&panel, "x", 960);
+    let panel_y = get_i64(&panel, "y", 540);
+    let panel_w = get_i64(&panel, "w", 320);
+    let panel_h = get_i64(&panel, "h", 220);
+    let panel_title = get_str(&panel, "title").unwrap_or("对话框").to_string();
+    let panel_name = get_str(&panel, "name").unwrap_or("panel").to_string();
+
+    // 标题 Text
+    let title_id = *next_id;
+    *next_id += 1;
+    let mut title = make_default_widget("text", title_id, Some(panel_id));
+    if let Some(o) = title.as_object_mut() {
+        o.insert("x".into(), json!(panel_x + 12));
+        o.insert("y".into(), json!(panel_y + 6));
+        o.insert("w".into(), json!(panel_w - 24));
+        o.insert("h".into(), json!(20));
+        o.insert("text".into(), json!(panel_title));
+        o.insert("textAlignH".into(), json!("center"));
+        o.insert("textAlignV".into(), json!("middle"));
+        o.insert("fontSize".into(), json!(16));
+        o.insert("textColor".into(), json!("FFCC00"));
+        o.insert("name".into(), json!(format!("{}_title", panel_name)));
+    }
+
+    // 两个按钮（确定 / 取消），每个按钮带一个 label 子节点
+    let btn_w: i64 = 88;
+    let btn_h: i64 = 28;
+    let gap: i64 = 16;
+    let total_w = btn_w * 2 + gap;
+    let start_x = panel_x + (panel_w - total_w) / 2;
+    let btn_y = panel_y + panel_h - btn_h - 16;
+
+    let mut result = vec![panel, title];
+
+    for (i, text) in ["确定", "取消"].iter().enumerate() {
+        let idx = i as i64;
+        let btn_id = *next_id;
+        *next_id += 1;
+        let label_id = *next_id;
+        *next_id += 1;
+
+        let mut btn = make_default_widget("button", btn_id, Some(panel_id));
+        if let Some(o) = btn.as_object_mut() {
+            o.insert("x".into(), json!(start_x + idx * (btn_w + gap)));
+            o.insert("y".into(), json!(btn_y));
+            o.insert("w".into(), json!(btn_w));
+            o.insert("h".into(), json!(btn_h));
+            o.insert("text".into(), json!(*text));
+            o.insert("fdfTemplate".into(), json!("NORMAL_DIALOG"));
+            o.insert("name".into(), json!(format!("{}_btn_{}", panel_name, idx + 1)));
+        }
+
+        let bx = get_i64(&btn, "x", 0);
+        let by = get_i64(&btn, "y", 0);
+        let bw = get_i64(&btn, "w", btn_w);
+        let bh = get_i64(&btn, "h", btn_h);
+        let btn_name = get_str(&btn, "name").unwrap_or("button").to_string();
+
+        let mut label = make_default_widget("text", label_id, Some(btn_id));
+        if let Some(o) = label.as_object_mut() {
+            o.insert("x".into(), json!(bx));
+            o.insert("y".into(), json!(by));
+            o.insert("w".into(), json!(bw));
+            o.insert("h".into(), json!(bh));
+            o.insert("text".into(), json!(*text));
+            o.insert("textAlignH".into(), json!("center"));
+            o.insert("textAlignV".into(), json!("middle"));
+            o.insert("fontSize".into(), json!(14));
+            o.insert("textColor".into(), json!("FFFFFF"));
+            o.insert("name".into(), json!(format!("{}_label", btn_name)));
+        }
+
+        result.push(btn);
+        result.push(label);
+    }
+
+    result
 }
 
 fn build_widget_tree(widgets: &[serde_json::Value]) -> Vec<serde_json::Value> {

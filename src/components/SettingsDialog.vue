@@ -88,6 +88,31 @@
         </div>
 
         <div class="settings-section">
+          <h3>全局资源库</h3>
+          <div class="hint" style="margin-bottom: 6px;">
+            跨项目共享的 WC3 贴图/图标仓库。
+            <strong>路径完全由你决定</strong>——WC3 素材动辄几个 GB，程序不会把它默认塞到 C 盘。
+            所有对全局库的读写都走自定义 Rust 命令，不受 <code>fs:scope</code> 白名单限制，可以放在任意盘符/外接盘。
+          </div>
+
+          <label for="grl-path">全局资源库路径</label>
+          <div class="grl-path-row">
+            <v-text-field id="grl-path" density="compact" variant="outlined" hide-details readonly
+              v-model="localSettings.globalResourceRootPath"
+              placeholder="尚未配置，点击右侧按钮选择…" />
+            <v-btn size="small" variant="outlined" @click="onPickGlobalRoot">选择目录…</v-btn>
+          </div>
+          <div v-if="grlStatus" class="grl-status" :class="{ 'grl-status--bad': !grlStatus.ok }">
+            {{ grlStatus.message }}
+            <template v-if="grlStatus.ok && freeSpaceText">· 所在盘可用空间 {{ freeSpaceText }}</template>
+          </div>
+
+          <v-checkbox v-model="localSettings.defaultConvertToBlp" density="compact" hide-details
+            label="导入时默认勾选「将 PNG/JPG/BMP/TGA 转换为 BLP」" />
+          <div class="hint">可以在"导入资源"对话框里逐次覆盖。</div>
+        </div>
+
+        <div class="settings-section">
           <h3>其他设置</h3>
           <v-checkbox
             v-model="localSettings.autoSave"
@@ -109,6 +134,8 @@
 
 <script setup lang="ts">
 import { ref, watch, computed, onBeforeUnmount } from 'vue';
+import { open as tauriOpen } from '@tauri-apps/plugin-dialog';
+import { invoke } from '@tauri-apps/api/core';
 import {
   WC3_CANVAS_MIN_WIDTH,
   WC3_CANVAS_MAX_WIDTH,
@@ -118,13 +145,29 @@ import {
   clampCanvasSize,
 } from '../constants/wc3CanvasLimits';
 
+interface GrlSetRootResult {
+  ok: boolean;
+  normalizedPath: string;
+  writable: boolean;
+  created: boolean;
+  message: string;
+}
+
 const props = defineProps({
   showSettings: Boolean,
   settings: Object,
   themeName: { type: String, default: 'appDark' },
 });
 
-const emit = defineEmits(['update:showSettings', 'update:settings', 'save', 'reset', 'set-theme']);
+const emit = defineEmits([
+  'update:showSettings',
+  'update:settings',
+  'save',
+  'reset',
+  'set-theme',
+  /** 用户确认切换全局资源库路径，payload: { oldPath, newPath, mode: 'move' | 'copy' | 'switch' } */
+  'change-global-resource-root',
+]);
 
 const themeOptions = [
   { title: '深色', value: 'appDark' },
@@ -132,6 +175,82 @@ const themeOptions = [
 ];
 
 const localSettings = ref({ ...props.settings });
+
+// 全局资源库路径相关状态
+const grlStatus = ref<GrlSetRootResult | null>(null);
+const grlFreeSpace = ref<number>(0);
+
+const formatBytes = (bytes: number): string => {
+  if (!bytes) return '';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let v = bytes;
+  let i = 0;
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024;
+    i++;
+  }
+  return `${v.toFixed(v >= 10 || i === 0 ? 0 : 1)} ${units[i]}`;
+};
+
+const freeSpaceText = computed(() => formatBytes(grlFreeSpace.value));
+
+const refreshFreeSpace = async () => {
+  const p = localSettings.value.globalResourceRootPath;
+  if (!p) {
+    grlFreeSpace.value = 0;
+    return;
+  }
+  try {
+    const n = await invoke<number>('disk_free_space', { path: p });
+    grlFreeSpace.value = Number(n) || 0;
+  } catch {
+    grlFreeSpace.value = 0;
+  }
+};
+
+const onPickGlobalRoot = async () => {
+  try {
+    const picked = await tauriOpen({
+      title: '选择全局资源库位置（建议放到 D:/E: 等数据盘）',
+      directory: true,
+      multiple: false,
+      defaultPath: localSettings.value.globalResourceRootPath || undefined,
+    });
+    if (!picked) return;
+    const newPath = Array.isArray(picked) ? picked[0] : picked;
+    const oldPath = localSettings.value.globalResourceRootPath;
+
+    const res = await invoke<GrlSetRootResult>('global_resource_set_root', { root: newPath });
+    grlStatus.value = res;
+    if (!res.ok) return;
+
+    if (oldPath && oldPath !== res.normalizedPath) {
+      // 已存在旧路径：让父组件弹"迁移 / 切换指针 / 取消"对话框
+      emit('change-global-resource-root', { oldPath, newPath: res.normalizedPath });
+      // 先把 UI 上的路径改为新路径；若用户最终取消，父组件会把 settings 改回去
+      localSettings.value.globalResourceRootPath = res.normalizedPath;
+    } else {
+      localSettings.value.globalResourceRootPath = res.normalizedPath;
+    }
+    await refreshFreeSpace();
+  } catch (e: any) {
+    grlStatus.value = {
+      ok: false,
+      normalizedPath: '',
+      writable: false,
+      created: false,
+      message: '选择路径失败：' + (e?.message || String(e)),
+    };
+  }
+};
+
+watch(
+  () => localSettings.value.globalResourceRootPath,
+  () => {
+    void refreshFreeSpace();
+  },
+  { immediate: true },
+);
 
 // 拖动相关状态
 const dialogRef = ref(null);
@@ -340,6 +459,33 @@ onBeforeUnmount(() => {
   display: flex;
   justify-content: flex-end;
   gap: 10px;
+}
+
+.grl-path-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.grl-path-row > :first-child {
+  flex: 1;
+}
+
+.grl-status {
+  font-size: 11px;
+  color: #6fce8e;
+  margin-top: 4px;
+}
+
+.grl-status--bad {
+  color: #ff8f8f;
+}
+
+.settings-section code {
+  background: rgba(255, 255, 255, 0.08);
+  padding: 0 4px;
+  border-radius: 3px;
+  font-size: 11px;
 }
 </style>
 

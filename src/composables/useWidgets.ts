@@ -72,50 +72,152 @@ export function useWidgets(settings: Ref<Settings>) {
         };
     });
 
-    const addWidget = (type: string) => {
+    // 统一建立一个新 widget 的默认字段（不 push 进列表，方便组合使用）
+    const buildWidget = (
+        type: string,
+        opts: Partial<Widget> = {},
+    ): Widget => {
         const id = nextId.value++;
-        let defaultText = '';
-        if (type === 'text') {
-            defaultText = '文本';
-        } else if (type === 'button') {
-            defaultText = '按钮';
-        }
         const cw = settings.value.canvasWidth;
         const ch = settings.value.canvasHeight;
-        const ww = 100;
-        const hh = 100;
-        const cx = Math.max(0, Math.floor((cw - ww) / 2));
-        const cy = Math.max(0, Math.floor((ch - hh) / 2));
-        widgets.value.push({
+        const ww = opts.w ?? 100;
+        const hh = opts.h ?? 100;
+        const cx = opts.x ?? Math.max(0, Math.floor((cw - ww) / 2));
+        const cy = opts.y ?? Math.max(0, Math.floor((ch - hh) / 2));
+        let defaultText = '';
+        if (type === 'text') defaultText = '文本';
+        else if (type === 'button') defaultText = '按钮';
+        const w: Widget = {
             id,
-            name: `${type}_${id}`,
+            name: opts.name ?? `${type}_${id}`,
             type,
-            parentId: null,
-            // 基础属性（画布内居中）
+            parentId: opts.parentId ?? null,
             x: cx,
             y: cy,
             w: ww,
             h: hh,
-            enable: true,
-            visible: true,
-            locked: false,
-            // 文本属性（仅在文本类控件中使用）
-            font: '', // 字体/字体文件名
-            fontSize: 14, // 字体大小（编辑器中的像素大小，导出时可自行换算）
-            outlineSize: 0, // 描边宽度
-            textAlign: 'top_left', // 文本对齐方式
-            // 通用
-            text: defaultText,
-            image: '',
-            // 按钮专用
-            clickImage: '',
-            hoverImage: '',
-            draggable: false,
-            // 旧属性（部分控件使用）
-            checked: false,
-            selectedIndex: 0,
+            enable: opts.enable ?? true,
+            visible: opts.visible ?? true,
+            locked: opts.locked ?? false,
+            font: opts.font ?? '',
+            fontSize: opts.fontSize ?? 14,
+            outlineSize: opts.outlineSize ?? 0,
+            textAlignH: opts.textAlignH ?? 'left',
+            textAlignV: opts.textAlignV ?? 'top',
+            text: opts.text ?? defaultText,
+            image: opts.image ?? '',
+            clickImage: opts.clickImage ?? '',
+            hoverImage: opts.hoverImage ?? '',
+            draggable: opts.draggable ?? false,
+            checked: opts.checked ?? false,
+            selectedIndex: opts.selectedIndex ?? 0,
+        };
+        // 允许通过 opts 透传新字段（alpha/padding/tooltip/fdfTemplate/...）
+        return Object.assign(w, opts, {
+            id, // 强制使用生成的 id
+            type,
+            x: cx,
+            y: cy,
+            w: ww,
+            h: hh,
+            name: w.name,
         });
-        selectedIds.value = [id];
+    };
+
+    const addWidget = (type: string) => {
+        // Dialog 是组合控件：一次性创建 Panel(titleBar) + 若干 Button
+        if (type === 'dialog') {
+            const panel = buildWidget('panel', {
+                w: 320,
+                h: 220,
+                templateKind: 'Dialog',
+                showTitleBar: true,
+                titleBarHeight: 28,
+                title: '对话框',
+                titleColor: 'FFCC00',
+                showCloseButton: true,
+                backgroundPreset: 'DIALOG',
+            });
+            widgets.value.push(panel);
+            // 标题文字（子 Text 节点）
+            const titleText = buildWidget('text', {
+                parentId: panel.id,
+                x: panel.x + 12,
+                y: panel.y + 6,
+                w: panel.w - 24,
+                h: 20,
+                text: panel.title || '对话框',
+                textAlignH: 'center',
+                textAlignV: 'middle',
+                fontSize: 16,
+                textColor: 'FFCC00',
+                name: `${panel.name}_title`,
+            });
+            widgets.value.push(titleText);
+            // 默认两个按钮：确定 / 取消
+            const btnW = 88;
+            const btnH = 28;
+            const gap = 16;
+            const totalW = btnW * 2 + gap;
+            const startX = panel.x + Math.floor((panel.w - totalW) / 2);
+            const btnY = panel.y + panel.h - btnH - 16;
+            const mkBtn = (text: string, idx: number) => {
+                const btn = buildWidget('button', {
+                    parentId: panel.id,
+                    x: startX + idx * (btnW + gap),
+                    y: btnY,
+                    w: btnW,
+                    h: btnH,
+                    text,
+                    fdfTemplate: 'NORMAL_DIALOG',
+                    name: `${panel.name}_btn_${idx + 1}`,
+                });
+                widgets.value.push(btn);
+                // 给按钮补一个 Text 子节点
+                const label = buildWidget('text', {
+                    parentId: btn.id,
+                    x: btn.x,
+                    y: btn.y,
+                    w: btn.w,
+                    h: btn.h,
+                    text,
+                    textAlignH: 'center',
+                    textAlignV: 'middle',
+                    fontSize: 14,
+                    textColor: 'FFFFFF',
+                    name: `${btn.name}_label`,
+                });
+                widgets.value.push(label);
+            };
+            mkBtn('确定', 0);
+            mkBtn('取消', 1);
+            selectedIds.value = [panel.id];
+            clampAllWidgets();
+            return;
+        }
+
+        const w = buildWidget(type);
+        widgets.value.push(w);
+
+        // Button 组合：自动补一个 Text 子节点作为文字层（与模板 Button.ts 一致）
+        if (type === 'button') {
+            const label = buildWidget('text', {
+                parentId: w.id,
+                x: w.x,
+                y: w.y,
+                w: w.w,
+                h: w.h,
+                text: w.text,
+                textAlignH: 'center',
+                textAlignV: 'middle',
+                fontSize: 14,
+                textColor: 'FFFFFF',
+                name: `${w.name}_label`,
+            });
+            widgets.value.push(label);
+        }
+
+        selectedIds.value = [w.id];
         clampAllWidgets();
     };
 

@@ -8,7 +8,7 @@
         <v-card class="plugin-debug-dialog" rounded="xl" elevation="12">
             <v-card-title>插件调试输出</v-card-title>
             <v-card-text class="export-body">
-                <pre class="plugin-debug-output">{{ output }}</pre>
+                <pre class="plugin-debug-output selectable">{{ output }}</pre>
             </v-card-text>
             <v-card-actions class="export-footer">
                 <v-btn variant="flat" color="primary" @click="emitClose">关闭</v-btn>

@@ -25,3 +25,53 @@ body {
 #app {
     height: 100vh;
 }
+
+/* -------------------------------------------------------------------------
+ * 桌面应用全局禁选：
+ * 让普通 UI 文本不可被鼠标拖选、不出现蓝色高亮；
+ * 仅在真正的输入控件内恢复文本选中能力与文本光标。
+ * ----------------------------------------------------------------------- */
+html,
+body,
+#app {
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+    /* 同时屏蔽长按触控选中（Tauri WebView 下也生效） */
+    -webkit-touch-callout: none;
+}
+
+/* 白名单：原生/富文本输入控件需要可选中 */
+input,
+textarea,
+select,
+[contenteditable="true"],
+[contenteditable=""],
+/* Vuetify 表单组件内部的可编辑区域 */
+.v-field__input,
+.v-field input,
+.v-field textarea,
+.v-input input,
+.v-input textarea {
+    -webkit-user-select: text;
+    -moz-user-select: text;
+    -ms-user-select: text;
+    user-select: text;
+    cursor: text;
+}
+
+/* 特殊类：代码/日志/终端类面板如果需要允许选中，可手动加 .selectable 放行 */
+.selectable,
+.selectable * {
+    -webkit-user-select: text;
+    -moz-user-select: text;
+    -ms-user-select: text;
+    user-select: text;
+}
+
+/* 去除选中时的高亮颜色残留（某些平台在极少场景下仍会出现蓝色底色） */
+::selection {
+    background: rgba(100, 162, 255, 0.35);
+    color: inherit;
+}

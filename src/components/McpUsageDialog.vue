@@ -46,7 +46,7 @@
             </div>
           </div>
           <p class="tip">复制到 VS Code：<code>.vscode/mcp.json</code> 或用户级 MCP 配置。</p>
-          <pre class="json-example">{{ vscodeMcpJson }}</pre>
+          <pre class="json-example selectable">{{ vscodeMcpJson }}</pre>
           <div class="actions-row">
             <v-btn size="small" variant="outlined" color="secondary" @click="applyDefaultPreset">默认 URL 预设</v-btn>
             <v-btn size="small" variant="flat" color="primary" @click="copyVscodeJson">复制 VS Code JSON</v-btn>

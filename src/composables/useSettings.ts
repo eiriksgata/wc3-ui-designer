@@ -21,6 +21,9 @@ export function useSettings() {
         // 画布背景颜色与背景图片
         canvasBgColor: '#1a1a1a',
         canvasBgImage: '',
+        // 全局资源库（跨项目共享）：空串 = 未配置
+        globalResourceRootPath: '',
+        defaultConvertToBlp: true,
     });
 
     const saveSettings = (): boolean => {
@@ -43,6 +46,8 @@ export function useSettings() {
             controlPanelWidth: 220,
             canvasBgColor: '#1a1a1a',
             canvasBgImage: '',
+            globalResourceRootPath: '',
+            defaultConvertToBlp: true,
         };
         applyCanvasClamp(settings.value);
     };

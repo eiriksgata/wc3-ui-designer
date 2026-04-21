@@ -20,7 +20,7 @@
                 </div>
                 <details class="proposal-details">
                     <summary>查看动作列表</summary>
-                    <pre class="proposal-raw">{{ formatActions(p.actions) }}</pre>
+                    <pre class="proposal-raw selectable">{{ formatActions(p.actions) }}</pre>
                 </details>
                 <div class="proposal-actions">
                     <v-btn color="success" size="small" variant="flat" @click="onAccept(p.id)">

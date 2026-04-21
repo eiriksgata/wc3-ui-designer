@@ -49,8 +49,9 @@
                     title="控件类型"
                 />
 
-                <!-- 文本内容 & 文本属性：仅文本基础类型控件显示（Panel / Button 不需要 text） -->
-                <template v-if="baseTypeOf(selectedWidget.type) === 'text'">
+                <!-- 文本内容 & 文本属性：文本类、或按钮（其内嵌 label）都可编辑。
+                     按钮虽然没有 baseType=text，但在组合模型里它承载一段文字。 -->
+                <template v-if="baseTypeOf(selectedWidget.type) === 'text' || baseTypeOf(selectedWidget.type) === 'button'">
                     <label for="widget-text">文本</label>
                     <v-textarea
                         id="widget-text"
@@ -98,13 +99,113 @@
                             hide-details
                         />
 
-                        <label for="widget-text-align">对齐方式</label>
+                        <label for="widget-text-color">文字颜色</label>
+                        <div class="prop-inline">
+                            <input
+                                id="widget-text-color"
+                                type="color"
+                                class="prop-color-input"
+                                :value="textColorForPicker"
+                                @input="onTextColorPicked($event)"
+                                title="文字颜色（对应 Text.setColor）"
+                            />
+                            <v-text-field
+                                v-model="selectedWidget.textColor"
+                                placeholder="FFFFFF"
+                                density="compact"
+                                variant="outlined"
+                                hide-details
+                                maxlength="6"
+                                title="十六进制 RGB（无 # 前缀）"
+                            />
+                        </div>
+
+                        <label for="widget-text-color-preset">颜色预设</label>
                         <v-select
-                            id="widget-text-align"
-                            v-model="selectedWidget.textAlign"
-                            :items="textAlignItems"
+                            id="widget-text-color-preset"
+                            :model-value="''"
+                            :items="textColorPresetItems"
                             item-title="title"
                             item-value="value"
+                            density="compact"
+                            variant="outlined"
+                            hide-details
+                            placeholder="选择预设颜色"
+                            @update:model-value="onTextColorPresetPicked"
+                        />
+                    </div>
+
+                    <label class="prop-section-subtitle">对齐方式</label>
+                    <div class="prop-group prop-grid-2">
+                        <label for="widget-text-align-h">水平</label>
+                        <v-select
+                            id="widget-text-align-h"
+                            :model-value="alignH"
+                            :items="textAlignHItems"
+                            item-title="title"
+                            item-value="value"
+                            density="compact"
+                            variant="outlined"
+                            hide-details
+                            @update:model-value="setAlignH"
+                        />
+                        <label for="widget-text-align-v">垂直</label>
+                        <v-select
+                            id="widget-text-align-v"
+                            :model-value="alignV"
+                            :items="textAlignVItems"
+                            item-title="title"
+                            item-value="value"
+                            density="compact"
+                            variant="outlined"
+                            hide-details
+                            @update:model-value="setAlignV"
+                        />
+                    </div>
+                    <div class="align-grid" title="九宫格快选">
+                        <button
+                            v-for="cell in alignGridCells"
+                            :key="cell.h + '_' + cell.v"
+                            type="button"
+                            class="align-grid-cell"
+                            :class="{ active: alignH === cell.h && alignV === cell.v }"
+                            @click="setAlign(cell.h, cell.v)"
+                            :title="`${alignLabels.h[cell.h]} / ${alignLabels.v[cell.v]}`"
+                        >
+                            <span class="align-grid-dot"></span>
+                        </button>
+                    </div>
+
+                    <label class="prop-section-subtitle">内边距 (TRBL)</label>
+                    <div class="prop-group prop-grid-4">
+                        <v-text-field
+                            type="number"
+                            v-model.number="paddingTop"
+                            placeholder="上"
+                            density="compact"
+                            variant="outlined"
+                            hide-details
+                        />
+                        <v-text-field
+                            type="number"
+                            v-model.number="paddingRight"
+                            placeholder="右"
+                            density="compact"
+                            variant="outlined"
+                            hide-details
+                        />
+                        <v-text-field
+                            type="number"
+                            v-model.number="paddingBottom"
+                            placeholder="下"
+                            density="compact"
+                            variant="outlined"
+                            hide-details
+                        />
+                        <v-text-field
+                            type="number"
+                            v-model.number="paddingLeft"
+                            placeholder="左"
                             density="compact"
                             variant="outlined"
                             hide-details
@@ -140,7 +241,22 @@
 
                 <!-- 图片 / 按钮属性 -->
                 <template v-if="supportsImage(selectedWidget.type)">
-                    <h4 class="prop-section-title">图片</h4>
+                    <h4 class="prop-section-title">底板 (Backdrop)</h4>
+
+                    <label for="widget-bg-preset">背景预设</label>
+                    <v-select
+                        id="widget-bg-preset"
+                        v-model="selectedWidget.backgroundPreset"
+                        :items="uiBackgroundItems"
+                        item-title="title"
+                        item-value="value"
+                        density="compact"
+                        variant="outlined"
+                        hide-details
+                        placeholder="选择一个模板预设（UIBackgrounds）"
+                        title="对应模板 Panel.setBackgroundPreset / Button 贴图"
+                    />
+
                     <label for="widget-image-select">图片资源（Frame.image）</label>
                     <v-select
                         id="widget-image-select"
@@ -163,10 +279,107 @@
                         variant="outlined"
                         hide-details
                     />
+
+                    <label class="prop-section-subtitle">透明度 (0-255)</label>
+                    <v-slider
+                        v-model.number="alphaValue"
+                        :min="0"
+                        :max="255"
+                        :step="1"
+                        density="compact"
+                        hide-details
+                        thumb-label
+                        color="primary"
+                    />
+                </template>
+
+                <!-- Panel 标题栏 & 关闭按钮 -->
+                <template v-if="baseTypeOf(selectedWidget.type) === 'panel'">
+                    <h4 class="prop-section-title">标题栏 (Panel)</h4>
+                    <div class="prop-group prop-inline prop-inline-checks">
+                        <v-checkbox
+                            v-model="selectedWidget.showTitleBar"
+                            label="显示标题栏"
+                            density="compact"
+                            hide-details
+                            color="primary"
+                        />
+                        <v-checkbox
+                            v-model="selectedWidget.showCloseButton"
+                            label="关闭按钮"
+                            density="compact"
+                            hide-details
+                            color="primary"
+                        />
+                        <v-checkbox
+                            v-model="selectedWidget.draggable"
+                            label="可拖动"
+                            density="compact"
+                            hide-details
+                            color="primary"
+                        />
+                    </div>
+                    <div class="prop-group prop-grid-2">
+                        <label for="widget-title">标题</label>
+                        <v-text-field
+                            id="widget-title"
+                            v-model="selectedWidget.title"
+                            placeholder="标题文本"
+                            density="compact"
+                            variant="outlined"
+                            hide-details
+                        />
+                        <label for="widget-title-color">标题颜色</label>
+                        <v-text-field
+                            id="widget-title-color"
+                            v-model="selectedWidget.titleColor"
+                            placeholder="FFCC00"
+                            density="compact"
+                            variant="outlined"
+                            hide-details
+                            maxlength="6"
+                        />
+                        <label for="widget-title-bar-height">标题栏高度</label>
+                        <v-text-field
+                            id="widget-title-bar-height"
+                            type="number"
+                            v-model.number="selectedWidget.titleBarHeight"
+                            min="0"
+                            density="compact"
+                            variant="outlined"
+                            hide-details
+                        />
+                    </div>
                 </template>
 
                 <!-- Button 额外属性 -->
                 <template v-if="baseTypeOf(selectedWidget.type) === 'button'">
+                    <h4 class="prop-section-title">交互 (Button)</h4>
+                    <label for="widget-fdf-template">FDF 模板预设</label>
+                    <v-select
+                        id="widget-fdf-template"
+                        v-model="selectedWidget.fdfTemplate"
+                        :items="fdfTemplateItems"
+                        item-title="title"
+                        item-value="value"
+                        density="compact"
+                        variant="outlined"
+                        hide-details
+                        placeholder="ButtonTemplates（可空）"
+                        title="对应 Button.createWithTemplate 的 inherits 参数"
+                    />
+
+                    <label for="widget-tooltip">Tooltip</label>
+                    <v-textarea
+                        id="widget-tooltip"
+                        v-model="selectedWidget.tooltip"
+                        placeholder="鼠标悬停时的提示文字"
+                        variant="outlined"
+                        rows="2"
+                        auto-grow
+                        hide-details
+                    />
+
                     <h4 class="prop-subtitle">按钮图片</h4>
                     <label for="widget-btn-image-click">点击图片</label>
                     <v-text-field
@@ -187,6 +400,34 @@
                         variant="outlined"
                         hide-details
                     />
+
+                    <label class="prop-section-subtitle">悬浮效果 (addHoverEffect)</label>
+                    <div class="prop-group prop-grid-2">
+                        <label for="widget-normal-alpha">常态 Alpha</label>
+                        <v-text-field
+                            id="widget-normal-alpha"
+                            type="number"
+                            v-model.number="selectedWidget.normalAlpha"
+                            placeholder="255"
+                            min="0"
+                            max="255"
+                            density="compact"
+                            variant="outlined"
+                            hide-details
+                        />
+                        <label for="widget-hover-alpha">悬浮 Alpha</label>
+                        <v-text-field
+                            id="widget-hover-alpha"
+                            type="number"
+                            v-model.number="selectedWidget.hoverAlpha"
+                            placeholder="180"
+                            min="0"
+                            max="255"
+                            density="compact"
+                            variant="outlined"
+                            hide-details
+                        />
+                    </div>
 
                     <div class="prop-group">
                         <v-checkbox
@@ -573,6 +814,13 @@
 
 <script setup lang="ts">
 import { computed } from 'vue';
+import { getWidgetAlign } from '../types';
+import type { Widget, TextAlignH, TextAlignV } from '../types';
+import {
+    UIBackgrounds,
+    ButtonTemplates,
+    TextColors,
+} from '../constants/templatePresets';
 
 const props = defineProps({
     rightWidth: { type: Number, default: 260 },
@@ -640,17 +888,125 @@ const widgetTypeItems = computed(() =>
     })),
 );
 
-const textAlignItems = [
-    { title: '左上', value: 'top_left' },
-    { title: '顶部', value: 'top' },
-    { title: '右上', value: 'top_right' },
-    { title: '左侧', value: 'left' },
-    { title: '中心', value: 'center' },
-    { title: '右侧', value: 'right' },
-    { title: '左下', value: 'bottom_left' },
-    { title: '底部', value: 'bottom' },
-    { title: '右下', value: 'bottom_right' },
+const textAlignHItems = [
+    { title: '左', value: 'left' },
+    { title: '中', value: 'center' },
+    { title: '右', value: 'right' },
 ];
+
+const textAlignVItems = [
+    { title: '上', value: 'top' },
+    { title: '中', value: 'middle' },
+    { title: '下', value: 'bottom' },
+];
+
+const alignLabels = {
+    h: { left: '左', center: '中', right: '右' } as Record<TextAlignH, string>,
+    v: { top: '上', middle: '中', bottom: '下' } as Record<TextAlignV, string>,
+};
+
+const alignGridCells: Array<{ h: TextAlignH; v: TextAlignV }> = [
+    { h: 'left', v: 'top' }, { h: 'center', v: 'top' }, { h: 'right', v: 'top' },
+    { h: 'left', v: 'middle' }, { h: 'center', v: 'middle' }, { h: 'right', v: 'middle' },
+    { h: 'left', v: 'bottom' }, { h: 'center', v: 'bottom' }, { h: 'right', v: 'bottom' },
+];
+
+const align = computed(() => {
+    const w = props.selectedWidget as Widget | null;
+    if (!w) return { h: 'left' as TextAlignH, v: 'top' as TextAlignV };
+    return getWidgetAlign(w);
+});
+const alignH = computed(() => align.value.h);
+const alignV = computed(() => align.value.v);
+
+const writeAlign = (h: TextAlignH, v: TextAlignV) => {
+    const w = props.selectedWidget as Widget | null;
+    if (!w) return;
+    w.textAlignH = h;
+    w.textAlignV = v;
+};
+const setAlignH = (h: TextAlignH) => writeAlign(h, alignV.value);
+const setAlignV = (v: TextAlignV) => writeAlign(alignH.value, v);
+const setAlign = (h: TextAlignH, v: TextAlignV) => writeAlign(h, v);
+
+// 内边距 (TRBL) 双向绑定
+const ensurePadding = (): { top: number; right: number; bottom: number; left: number } => {
+    const w = props.selectedWidget as Widget | null;
+    if (!w) return { top: 0, right: 0, bottom: 0, left: 0 };
+    if (!w.padding) w.padding = { top: 0, right: 0, bottom: 0, left: 0 };
+    return w.padding;
+};
+const paddingTop = computed({
+    get: () => (props.selectedWidget as Widget | null)?.padding?.top ?? 0,
+    set: (v: number) => (ensurePadding().top = Number(v) || 0),
+});
+const paddingRight = computed({
+    get: () => (props.selectedWidget as Widget | null)?.padding?.right ?? 0,
+    set: (v: number) => (ensurePadding().right = Number(v) || 0),
+});
+const paddingBottom = computed({
+    get: () => (props.selectedWidget as Widget | null)?.padding?.bottom ?? 0,
+    set: (v: number) => (ensurePadding().bottom = Number(v) || 0),
+});
+const paddingLeft = computed({
+    get: () => (props.selectedWidget as Widget | null)?.padding?.left ?? 0,
+    set: (v: number) => (ensurePadding().left = Number(v) || 0),
+});
+
+const alphaValue = computed({
+    get: () => {
+        const w = props.selectedWidget as Widget | null;
+        return typeof w?.alpha === 'number' ? w.alpha : 255;
+    },
+    set: (v: number) => {
+        const w = props.selectedWidget as Widget | null;
+        if (!w) return;
+        const n = Math.max(0, Math.min(255, Math.round(Number(v) || 0)));
+        w.alpha = n;
+    },
+});
+
+// 文字颜色：HTML color input 需要 #RRGGBB，widget 里存的是无 # 的十六进制
+const textColorForPicker = computed(() => {
+    const w = props.selectedWidget as Widget | null;
+    const raw = (w?.textColor || '').trim();
+    if (/^[0-9A-Fa-f]{6}$/.test(raw)) return `#${raw.toUpperCase()}`;
+    return '#FFFFFF';
+});
+const onTextColorPicked = (ev: Event) => {
+    const w = props.selectedWidget as Widget | null;
+    if (!w) return;
+    const target = ev.target as HTMLInputElement;
+    const val = (target?.value || '').replace(/^#/, '').toUpperCase();
+    if (/^[0-9A-Fa-f]{6}$/.test(val)) w.textColor = val;
+};
+const onTextColorPresetPicked = (value: string) => {
+    const w = props.selectedWidget as Widget | null;
+    if (!w || !value) return;
+    w.textColor = value;
+};
+
+const textColorPresetItems = computed(() =>
+    Object.entries(TextColors).map(([k, v]) => ({
+        title: `${k} (#${v})`,
+        value: v,
+    })),
+);
+
+const uiBackgroundItems = computed(() => [
+    { title: '无', value: '' },
+    ...Object.entries(UIBackgrounds)
+        .filter(([k]) => k !== 'NONE')
+        .map(([k, v]) => ({ title: `${k} — ${v}`, value: k })),
+]);
+
+const fdfTemplateItems = computed(() => [
+    { title: '无（使用默认 Button 背景）', value: '' },
+    ...Object.entries(ButtonTemplates).map(([k, v]) => ({
+        title: `${k} (${v})`,
+        value: k,
+    })),
+]);
 
 const imageResourceItems = computed(() => [
     { title: '无', value: '' },
@@ -763,6 +1119,72 @@ const tweenTypeItems = [
 .prop-inline-checks {
     gap: 12px;
     align-items: center;
+}
+
+.prop-section-subtitle {
+    display: block;
+    font-size: 11px;
+    color: #9aa0a6;
+    letter-spacing: 0.3px;
+    margin: 10px 0 4px;
+}
+
+.prop-grid-4 {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+}
+
+.prop-color-input {
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border: 1px solid #444;
+    border-radius: 4px;
+    background: transparent;
+    cursor: pointer;
+}
+
+.align-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 28px);
+    grid-template-rows: repeat(3, 28px);
+    gap: 4px;
+    margin: 4px 0 10px;
+    justify-content: start;
+}
+
+.align-grid-cell {
+    width: 28px;
+    height: 28px;
+    border: 1px solid #3a3a3f;
+    border-radius: 3px;
+    background: #1e1e1e;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    padding: 0;
+}
+
+.align-grid-cell:hover {
+    border-color: #666;
+}
+
+.align-grid-cell.active {
+    border-color: #4fc3f7;
+    background: rgba(79, 195, 247, 0.15);
+}
+
+.align-grid-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #9aa0a6;
+}
+
+.align-grid-cell.active .align-grid-dot {
+    background: #4fc3f7;
 }
 
 .prop-inline-checks :deep(.v-selection-control) {
