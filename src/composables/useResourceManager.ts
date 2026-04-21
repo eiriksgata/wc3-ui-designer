@@ -1,38 +1,22 @@
 import { ref, type Ref, type ComputedRef } from 'vue';
 import { open as tauriOpen } from '@tauri-apps/plugin-dialog';
-import { readFile, readDir } from '@tauri-apps/plugin-fs';
-import { invoke } from '@tauri-apps/api/core';
-import { decodeTgaToDataUrl } from '../utils/tgaDecoder';
+import { readDir } from '@tauri-apps/plugin-fs';
 import type { ImageResource, Widget } from '../types';
 
 /**
  * useResourceManager（schema 2.0.0 版）
  * ------------------------------------
- * 职责被严格缩到：
+ * 职责：
  *  1. 面板 UI 状态（拖拽高亮、悬浮预览、grid/panel ref）
- *  2. "收集"用户选择/拖入的**绝对路径**
- *  3. 对 `imageResources` 中的条目按其 `localPath` 刷新预览
+ *  2. "收集"用户选择/拖入的**绝对路径**，供 App.vue 路由到全局库流水线
+ *  3. 把资源应用到选中控件（widget.image = 资源绝对路径）
  *
- * **不再**自己往 `imageResources` 里 push 条目——项目资源必须经过全局库
- * 流水线（App.vue 会在拿到路径后弹 ImportResourceDialog 并落到全局库 +
- * 注册为项目引用）。这样避免出现没有 `globalRelPath` 的野条目。
+ * 不涉及任何项目资源登记表——schema 2.0.0 起项目不再维护 imageResources 登记表。
  */
 
 const ALLOWED_EXTS = ['blp', 'png', 'tga', 'bmp', 'jpg', 'jpeg'];
 
-// 从绝对路径生成 BLP 的 PNG dataURL 预览；失败时返回空串。
-async function blpPathToDataUrl(absPath: string): Promise<string> {
-    if (!absPath) return '';
-    try {
-        return await invoke<string>('blp_decode_to_png_base64', { absPath });
-    } catch (e) {
-        console.warn('BLP 解码失败（预览将留空）：', absPath, e);
-        return '';
-    }
-}
-
 export function useResourceManager(
-    imageResources: Ref<ImageResource[]>,
     message: Ref<string>,
     selectedWidget: ComputedRef<Widget | null>,
     uiZoom: Ref<number>
@@ -175,46 +159,6 @@ export function useResourceManager(
         return normalizePickedPaths(arr);
     };
 
-    // ================== 预览刷新（基于 localPath） ==================
-
-    /**
-     * 根据 `imageResources[*].localPath` 现场重算 previewUrl。
-     * 跳过 `missing === true` 或 `localPath` 为空的条目——缺失的文件不应
-     * 被展示成"正常"预览。Schema 2.0.0 起 localPath 必然是全局库下的绝对路径。
-     */
-    const refreshResourcePreviewsFromLocal = async () => {
-        const list = imageResources.value || [];
-        const tasks = list.map(async (res) => {
-            if (res.missing) return;
-            if (!res.localPath) return;
-            const ext = extOf(res.localPath);
-            try {
-                if (ext === 'blp') {
-                    res.previewUrl = await blpPathToDataUrl(res.localPath);
-                    return;
-                }
-                const data = await readFile(res.localPath);
-                const blob = new Blob([data], { type: 'application/octet-stream' });
-                if (['png', 'jpg', 'jpeg', 'bmp'].includes(ext)) {
-                    res.previewUrl = URL.createObjectURL(blob);
-                } else if (ext === 'tga') {
-                    res.previewUrl = await decodeTgaToDataUrl(blob);
-                } else {
-                    res.previewUrl = '';
-                }
-            } catch (e) {
-                // 文件读失败（可能越 fs:scope 或不存在）——标 missing，不展示坏预览。
-                console.warn('从本地路径加载资源预览失败:', res.localPath, e);
-                res.previewUrl = '';
-            }
-        });
-        try {
-            await Promise.all(tasks);
-        } catch (e) {
-            console.error('刷新资源预览时出错', e);
-        }
-    };
-
     // ================== 应用资源到控件 ==================
 
     const applyResourceToSelection = (res: ImageResource) => {
@@ -222,7 +166,8 @@ export function useResourceManager(
             message.value = '请先选中一个控件';
             return;
         }
-        selectedWidget.value.image = res.value;
+        // schema 2.0.0：widget.image 运行时 = 绝对路径；优先用 localPath，退化到 value。
+        selectedWidget.value.image = res.localPath || res.value;
         message.value = `已将资源 ${res.label} 应用到控件 ${selectedWidget.value.name}`;
     };
 
@@ -279,12 +224,11 @@ export function useResourceManager(
         onResourcesDragEnter,
         onResourcesDragOver,
         onResourcesDragLeave,
-        // 路径收集（供 App.vue 在 project/global 两种 scope 下统一路由）
+        // 路径收集（供 App.vue 统一路由到全局库导入流水线）
         collectWebDropPaths,
         collectTauriDropPaths,
         pickImportPaths,
-        // 预览 / 应用
-        refreshResourcePreviewsFromLocal,
+        // 应用
         applyResourceToSelection,
         onResourceMouseEnter,
         onResourceMouseMove,

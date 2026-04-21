@@ -1,12 +1,11 @@
 import type { Ref } from 'vue';
-import type { Widget, ImageResource, Animation, Settings } from '../types';
+import type { Widget, Animation, Settings } from '../types';
 import type { ExportPlugin } from '../types/plugin';
 import type { ActionResult, DesignerAction, DesignerSnapshot } from '../types/actionApi';
 
 interface ActionApiDeps {
     widgetsList: Ref<Widget[]>;
     selectedIds: Ref<number[]>;
-    imageResources: Ref<ImageResource[]>;
     animations: Ref<Animation[]>;
     settings: Ref<Settings>;
     nextId: Ref<number>;
@@ -27,14 +26,12 @@ const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value));
 export function useActionApi(deps: ActionApiDeps) {
     const getProjectSnapshot = (): DesignerSnapshot => ({
         widgets: clone(deps.widgetsList.value),
-        resources: clone(deps.imageResources.value),
         animations: clone(deps.animations.value),
         settings: clone(deps.settings.value),
     });
 
     const replaceProjectSnapshot = (snapshot: DesignerSnapshot) => {
         deps.widgetsList.value = clone(snapshot.widgets || []);
-        deps.imageResources.value = clone(snapshot.resources || []);
         deps.animations.value = clone(snapshot.animations || []);
         deps.settings.value = clone(snapshot.settings || deps.settings.value);
         const maxId = deps.widgetsList.value.reduce((max, widget) => Math.max(max, widget.id || 0), 0);

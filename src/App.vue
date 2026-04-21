@@ -173,7 +173,7 @@
 
         <PropertiesPanel :right-width="rightWidth" :canvas-width="settings.canvasWidth"
           :canvas-height="settings.canvasHeight" :selected-widget="selectedWidget" :selected-ids="selectedIds"
-          :all-widget-types="allWidgetTypes" :parent-candidates="parentCandidates" :image-resources="imageResources"
+          :all-widget-types="allWidgetTypes" :parent-candidates="parentCandidates" :global-resources="globalResources"
           :property-tabs="propertyTabs" :active-property-tab="activePropertyTab"
           :current-widget-animations="currentWidgetAnimations" :expanded-animation-id="expandedAnimationId"
           :batch-move="batchMove" :batch-size="batchSize" :batch-text="batchText" :batch-image="batchImage"
@@ -220,15 +220,12 @@
       <!-- 底部资源管理器分隔条 -->
       <div v-if="!isResourcesCollapsed" class="h-resizer" @mousedown.prevent="startDragBottom"></div>
 
-      <!-- 底部资源管理器 -->
+      <!-- 底部资源管理器（schema 2.0.0：单一全局库视图） -->
       <ResourcesPanel :height="resourcesHeight" :theme-name="activeThemeName" :collapsed="isResourcesCollapsed"
-        :image-resources="imageResources"
         :global-resources="globalResources"
         :global-root-configured="!!settings.globalResourceRootPath"
         :is-resources-drag-over="isResourcesDragOver" :hover-preview="hoverPreview" v-model:panelRef="resourcesPanelRef"
         v-model:gridRef="resourcesGridRef" @import-resources="onImportResourcesClick"
-        @import-to-global="onImportToGlobalClick"
-        @use-in-project="onUseGlobalResourceInProject"
         @delete-from-global="onDeleteFromGlobal"
         @open-settings="showSettings = true"
         @apply-resource="applyResourceToSelection" @drag-enter="onResourcesDragEnter" @drag-over="onResourcesDragOver"
@@ -332,7 +329,6 @@ import { useCanvas } from './composables/useCanvas';
 import { useRuler } from './composables/useRuler';
 import { useGrid } from './composables/useGrid';
 import { useWidgets } from './composables/useWidgets';
-import { useResources } from './composables/useResources';
 import { useResourceManager } from './composables/useResourceManager';
 import { useHistory } from './composables/useHistory';
 import { useClipboard } from './composables/useClipboard';
@@ -354,7 +350,7 @@ import { useProposals } from './composables/useProposals';
 import ProposalPanel from './components/ProposalPanel.vue';
 import GlobalLibraryFirstRunDialog from './components/GlobalLibraryFirstRunDialog.vue';
 import ImportResourceDialog from './components/ImportResourceDialog.vue';
-import { useGlobalResourceLibrary, toProjectValueFromGlobalRel } from './composables/useGlobalResourceLibrary';
+import { useGlobalResourceLibrary } from './composables/useGlobalResourceLibrary';
 import { getWidgetAlign } from './types';
 import { UIBackgrounds } from './constants/templatePresets';
 
@@ -376,7 +372,6 @@ const canvas = useCanvas(settings, uiZoom);
 const { rulerStep, rulerXTicks, rulerYTicks } = useRuler(settings, canvas.canvasSize, canvas.canvasScale, canvas.panX, canvas.panY);
 const { gridMode, gridSnapEnabled, gridStep, gridXTicks, gridYTicks, toggleGridSnap } = useGrid(settings);
 const widgets = useWidgets(settings);
-const resources = useResources();
 
 // 解构 canvas 相关变量
 const {
@@ -454,11 +449,6 @@ const propertyTabs = [
 const activePropertyTab = ref('props');
 
 
-// 解构 resources 相关变量
-const {
-  imageResources,
-} = resources;
-
 // 消息提示
 const message = ref('');
 
@@ -475,7 +465,7 @@ const {
 } = recentProjectsComposable;
 
 // 使用资源管理器 composable（需要在 message、selectedWidget 和 uiZoom 定义之后）
-const resourceManager = useResourceManager(imageResources, message, selectedWidget, uiZoom);
+const resourceManager = useResourceManager(message, selectedWidget, uiZoom);
 const {
   resourcesGridRef,
   resourcesPanelRef,
@@ -484,60 +474,79 @@ const {
   onResourcesDragEnter,
   onResourcesDragOver,
   onResourcesDragLeave,
-  onResourcesDrop: onResourcesDropProject,
-  onTauriDropPaths: onTauriDropPathsProject,
-  onImportResourcesClick: onImportResourcesClickWrapper,
-  refreshResourcePreviewsFromLocal,
+  collectWebDropPaths,
+  collectTauriDropPaths,
+  pickImportPaths,
   applyResourceToSelection,
   onResourceMouseEnter,
   onResourceMouseMove,
   onResourceMouseLeave,
 } = resourceManager;
 
-// 导入资源点击函数（透传 basePath 等选项）
-const onImportResourcesClick = (opts?: { basePath?: string }) => {
-  onImportResourcesClickWrapper(opts);
-};
-
-// 统一的 drop 调度：根据 ResourcesPanel 透传的 scope 决定落到"当前项目"还是"全局库"
-const onResourcesDrop = (ev: DragEvent, opts?: { basePath?: string; scope?: 'project' | 'global' }) => {
-  if (opts?.scope === 'global') {
-    // 浏览器 DataTransfer 中不一定含可用的绝对路径；这里不做处理，
-    // 用户应优先通过"导入到全局库…"按钮或 Tauri 原生拖放来导入。
-    const names: string[] = [];
-    try {
-      const files = ev.dataTransfer?.files;
-      if (files) {
-        for (let i = 0; i < files.length; i++) names.push((files[i] as any).path || files[i].name);
-      }
-    } catch { /* noop */ }
-    const abs = names.filter((n) => /[\\/:]/.test(n));
-    if (!abs.length) {
-      message.value = '请改用"导入到全局库…"或直接从资源管理器拖入文件（Tauri 原生拖放）';
-      return;
-    }
-    importToGlobalSources.value = abs;
-    importToGlobalSubDir.value = opts?.basePath || '';
-    importToGlobalWarnings.value = [];
-    showImportToGlobalDialog.value = true;
+/**
+ * 统一的"开启导入对话框"助手：把一组待导入的绝对路径塞进 ImportResourceDialog。
+ *
+ * schema 2.0.0 起，**所有资源都经由全局库**。这里是所有导入入口的终点；
+ * 项目不再维护自己的 imageResources 登记表——控件直接引用绝对路径即可。
+ */
+const openGlobalImportDialog = (
+  paths: string[],
+  subDir: string,
+) => {
+  if (!settings.value.globalResourceRootPath) {
+    showGlrFirstRun.value = true;
     return;
   }
-  onResourcesDropProject(ev, opts);
+  if (!paths || !paths.length) return;
+  importToGlobalSources.value = paths.slice();
+  importToGlobalSubDir.value = subDir || '';
+  importToGlobalWarnings.value = [];
+  showImportToGlobalDialog.value = true;
 };
 
-const onTauriDropPaths = (paths: string[], opts?: { basePath?: string; scope?: 'project' | 'global' }) => {
-  if (opts?.scope === 'global') {
-    if (!settings.value.globalResourceRootPath) {
-      showGlrFirstRun.value = true;
-      return;
-    }
-    importToGlobalSources.value = paths.slice();
-    importToGlobalSubDir.value = opts?.basePath || '';
-    importToGlobalWarnings.value = [];
-    showImportToGlobalDialog.value = true;
+// "导入资源…"按钮入口：先守卫全局库配置，再走全局库流水线，最后自动登记项目引用。
+const onImportResourcesClick = async (opts?: { basePath?: string }) => {
+  if (!settings.value.globalResourceRootPath) {
+    showGlrFirstRun.value = true;
     return;
   }
-  onTauriDropPathsProject(paths, opts);
+  try {
+    const paths = await pickImportPaths();
+    if (!paths.length) return;
+    openGlobalImportDialog(paths, opts?.basePath || '');
+  } catch (e) {
+    console.warn('选择资源失败', e);
+  }
+};
+
+// 统一的 drop 调度：无论来源，都先落到全局库、再登记到项目。
+const onResourcesDrop = async (
+  ev: DragEvent,
+  opts?: { basePath?: string },
+) => {
+  if (!settings.value.globalResourceRootPath) {
+    showGlrFirstRun.value = true;
+    return;
+  }
+  const paths = await collectWebDropPaths(ev);
+  if (!paths.length) {
+    message.value = '浏览器拖拽未获得路径，请改用 Tauri 原生拖放或"导入资源…"按钮';
+    return;
+  }
+  openGlobalImportDialog(paths, opts?.basePath || '');
+};
+
+const onTauriDropPaths = async (
+  paths: string[],
+  opts?: { basePath?: string },
+) => {
+  if (!settings.value.globalResourceRootPath) {
+    showGlrFirstRun.value = true;
+    return;
+  }
+  const normalized = await collectTauriDropPaths(paths);
+  if (!normalized.length) return;
+  openGlobalImportDialog(normalized, opts?.basePath || '');
 };
 
 // ============================== 全局资源库 ==============================
@@ -549,7 +558,6 @@ const {
   importSources: globalLibImport,
   removeEntry: globalLibRemove,
   migrate: globalLibMigrate,
-  useInProject: globalLibUseInProject,
 } = globalLib;
 
 // ---- 首次引导 ----
@@ -576,31 +584,6 @@ const importToGlobalSubDir = ref<string>('');
 const importToGlobalWarnings = ref<{ source: string; message: string }[]>([]);
 const importToGlobalBusy = ref(false);
 
-const onImportToGlobalClick = async (opts?: { basePath?: string }) => {
-  if (!settings.value.globalResourceRootPath) {
-    showGlrFirstRun.value = true;
-    return;
-  }
-  // 先让用户选文件，再打开对话框
-  try {
-    const picked = await tauriOpen({
-      title: '选择要导入到全局库的图片资源',
-      multiple: true,
-      filters: [
-        { name: '图片资源', extensions: ['blp', 'png', 'tga', 'bmp', 'jpg', 'jpeg'] },
-      ],
-    });
-    if (!picked) return;
-    const arr = Array.isArray(picked) ? picked : [picked];
-    importToGlobalSources.value = arr;
-    importToGlobalSubDir.value = opts?.basePath || '';
-    importToGlobalWarnings.value = [];
-    showImportToGlobalDialog.value = true;
-  } catch (e) {
-    console.warn('选择文件失败', e);
-  }
-};
-
 const onImportToGlobalConfirm = async (payload: {
   sources: string[];
   subDir: string;
@@ -609,6 +592,7 @@ const onImportToGlobalConfirm = async (payload: {
 }) => {
   importToGlobalBusy.value = true;
   try {
+    // schema 2.0.0：所有导入 = 只入全局库；widget 使用时直接以绝对路径引用，无登记表。
     const result = await globalLibImport({
       sources: payload.sources,
       subDir: payload.subDir,
@@ -619,21 +603,19 @@ const onImportToGlobalConfirm = async (payload: {
     if (!result.warnings || result.warnings.length === 0) {
       showImportToGlobalDialog.value = false;
     }
+    const n = result.entries?.length || 0;
+    if (n > 0) message.value = `已导入 ${n} 项到全局资源库`;
   } finally {
     importToGlobalBusy.value = false;
   }
 };
 
-// ---- 把全局库条目登记到当前项目资源 ----
-const onUseGlobalResourceInProject = (res: { label: string; value: string; localPath?: string; previewUrl?: string }) => {
-  const entry = globalLibUseInProject(res as any, imageResources as any);
-  message.value = `已加入项目资源：${entry.value}`;
-};
-
-// ---- 从全局库删除 ----
-const onDeleteFromGlobal = async (res: { value: string; label: string }) => {
+// ---- 从全局库删除（右键菜单）----
+const onDeleteFromGlobal = async (res: { value: string; label: string; relPath?: string }) => {
   if (!confirm(`确定要从全局资源库删除 "${res.label}" 吗？（会移动到 .trash 目录，可手动找回）`)) return;
-  await globalLibRemove(res.value);
+  // 新模型里 entry 以 relPath 为键。
+  const key = (res as any).relPath || (res as any).globalRelPath || res.value;
+  await globalLibRemove(key);
 };
 
 // ---- 切换全局库路径：迁移对话框 ----
@@ -677,20 +659,16 @@ const onMigrateMoveFiles = async () => {
   }
 };
 
-// 避免 unused 报错：toProjectValueFromGlobalRel 导出给 composable 内部使用，
-// 这里留一个引用以便后续直接在 App 里构造项目资源值时复用。
-void toProjectValueFromGlobalRel;
-
 // 使用导出功能 composable
 // 注意：saveProjectToFile 将在下面定义后传入
 let saveProjectToFileForExport = null;
 const exportComposable = useExport(
   widgetsList,
-  imageResources,
   settings,
   message,
   () => saveProjectToFileForExport && saveProjectToFileForExport(),
   getAnimationsForExport, // 传递动画导出函数给 useExport，用于插件导出
+  globalResources,        // 全局库条目：导出时以此为"源地址权威表"
 );
 const {
   showExportPanel,
@@ -752,12 +730,12 @@ const handleDeletePlugin = (pluginId) => {
 };
 
 // 使用项目文件操作 composable
+// schema 2.0.0：save/load 时 widget.image 做 abs<->rel 的转换，依赖全局库根。
 const projectFile = useProjectFile(
   widgetsList,
   selectedIds,
   nextId,
   settings,
-  imageResources,
   animations,
   nextAnimIdAnim,
   exportResourcesEnabled,
@@ -767,10 +745,10 @@ const projectFile = useProjectFile(
   selectedExportPlugin,
   exportPlugins,
   pushHistory,
-  refreshResourcePreviewsFromLocal,
   addRecentProject,
   message,
-  showWelcome
+  showWelcome,
+  globalLibRoot,
 );
 const {
   projectFileInput,
@@ -780,6 +758,7 @@ const {
   saveProjectAsFile,
   openProjectFromPath,
   loadProjectFromFile,
+  handleProjectFileSelected,
   handleNewProject,
   handleWelcomeNew,
   handleWelcomeOpen,
@@ -862,7 +841,6 @@ const performCloseProject = () => {
   clearAll();
   animations.value = [];
   nextAnimIdAnim.value = 1;
-  imageResources.value = [];
   clearHistory();
   clearCurrentProjectPath();
   resetExportConfig();
@@ -1216,8 +1194,9 @@ const applyBackgroundStyle = (style, w) => {
     const presetKey = typeof w.backgroundPreset === 'string' ? w.backgroundPreset : '';
     const presetValue = presetKey && UIBackgrounds[presetKey] != null ? UIBackgrounds[presetKey] : '';
     const imageValue = presetValue || w.image || '';
+    // schema 2.0.0：widget.image 运行时 = 绝对路径。按 abs 去全局库里反查预览。
     const res = imageValue
-        ? imageResources.value.find((r) => r.value === imageValue)
+        ? globalResources.value.find((r) => r.value === imageValue || r.localPath === imageValue)
         : null;
 
     if (res && res.previewUrl) {
@@ -1327,7 +1306,6 @@ const actionApi = useActionApi({
   widgetsList,
   selectedIds,
   nextId,
-  imageResources,
   animations,
   settings,
   addWidgetWithHistory,
@@ -1381,10 +1359,42 @@ async function importFromSidecar() {
       message.value = 'sidecar 缺少 widgets 数组';
       return;
     }
+    // sidecar 里 widget.image 是 `war3mapImported\<rel>`。
+    // 新模型（schema 2.0.0）要求运行时持有绝对路径，所以这里反解成绝对路径。
+    // 反解优先级：
+    //   1. 从 sidecar.imageResources 里按 value 查 localPath；
+    //   2. 兜底用当前全局库按 relPath 匹配。
+    const WAR3_RE = /^war3mapImported[\\/]/i;
+    const sidecarImgRes = Array.isArray(sidecar.imageResources) ? sidecar.imageResources : [];
+    const byValue = new Map<string, string>();
+    for (const r of sidecarImgRes) {
+      if (r?.value && r?.localPath) byValue.set(String(r.value), String(r.localPath));
+    }
+    const byRel = new Map<string, string>();
+    for (const g of globalResources.value || []) {
+      if (g?.relPath && g?.value) {
+        byRel.set(String(g.relPath).replace(/\//g, '\\').toLowerCase(), g.value);
+      }
+    }
+    const IMG_FIELDS = ['image', 'clickImage', 'hoverImage'] as const;
+    const resolvedWidgets = (sidecar.widgets as any[]).map((w) => {
+      const next = { ...w };
+      for (const f of IMG_FIELDS) {
+        const v = next[f];
+        if (typeof v !== 'string' || !v) continue;
+        if (!WAR3_RE.test(v)) continue;
+        const abs = byValue.get(v);
+        if (abs) { next[f] = abs; continue; }
+        const rel = v.replace(WAR3_RE, '').replace(/\//g, '\\').toLowerCase();
+        const hit = byRel.get(rel);
+        if (hit) next[f] = hit;
+        // 找不到就保留原样，提示用户这张图不在当前全局库里
+      }
+      return next;
+    });
     pushHistory();
     actionApi.replaceProjectSnapshot({
-      widgets: sidecar.widgets,
-      resources: imageResources.value,
+      widgets: resolvedWidgets,
       animations: (() => {
         const raw = sidecar.animations;
         if (!raw) return [];

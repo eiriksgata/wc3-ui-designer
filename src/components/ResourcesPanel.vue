@@ -4,28 +4,10 @@
         :style="collapsed ? undefined : { height: height + 'px' }" ref="panelRef">
         <div class="resources-header" :class="{ 'resources-header--collapsed': collapsed }" @click="onToggleCollapse">
             <span>资源管理器</span>
-            <!-- Tab 切换：当前项目 / 全局资源库 -->
-            <div v-if="!collapsed" class="resources-tabs" @click.stop>
-                <button
-                    class="tab-btn"
-                    type="button"
-                    :class="{ 'tab-btn--active': activeTab === 'project' }"
-                    @click="switchTab('project')"
-                    title="当前项目内的资源"
-                >
-                    当前项目
-                </button>
-                <button
-                    class="tab-btn"
-                    type="button"
-                    :class="{ 'tab-btn--active': activeTab === 'global' }"
-                    @click="switchTab('global')"
-                    title="跨项目共享的全局资源库（可在设置里配置路径）"
-                >
-                    全局资源库
-                    <span v-if="globalResources.length" class="tab-badge">{{ globalResources.length }}</span>
-                </button>
-            </div>
+            <!-- 子标题：全局资源库（唯一资源来源） -->
+            <span v-if="!collapsed" class="resources-subtitle" title="跨项目共享的全局资源库，可在设置里配置路径">
+                全局资源库<span v-if="globalRootConfigured && globalResources.length" class="subtitle-badge">{{ globalResources.length }}</span>
+            </span>
             <!-- 面包屑导航 -->
             <div v-if="!collapsed" class="resources-breadcrumbs" @click.stop>
                 <button class="crumb-btn" :class="{ 'crumb-btn--active': !currentPath }" type="button"
@@ -43,7 +25,7 @@
             </div>
             <span class="resources-count">
                 <template v-if="currentPath">当前 {{ currentFolders.length }} 个文件夹 · {{ currentFiles.length }} 个资源 ·</template>
-                共 {{ activeResources.length }} 项
+                共 {{ globalResources.length }} 项
             </span>
             <button
                 class="resources-toggle-btn"
@@ -66,19 +48,12 @@
                 <div class="resource-label">..</div>
             </div>
             <!-- 导入资源按钮（第一个格子）。
-                 全局库未配置时，不管哪个 Tab 都改成"去设置…"入口，
-                 避免用户在项目 Tab 点一下出一个没法用的对话框。 -->
+                 未配置全局库时换成"去设置…"入口；避免点了出一个没法用的对话框。 -->
             <div v-if="globalRootConfigured"
                 class="resource-item import-item" @click="onImportResourcesClick"
-                :title="activeTab === 'global'
-                    ? (currentPath ? `导入到全局库：${currentPath}` : '导入到全局库…')
-                    : (currentPath ? `导入到项目（经全局库）：${currentPath}` : '导入资源到项目…')">
-                <div class="resource-thumb import-thumb">
-                    ＋
-                </div>
-                <div class="resource-label">
-                    {{ activeTab === 'global' ? '导入到全局库…' : '导入资源…' }}
-                </div>
+                :title="currentPath ? `导入到全局库：${currentPath}` : '导入资源到全局库…'">
+                <div class="resource-thumb import-thumb">＋</div>
+                <div class="resource-label">导入资源…</div>
             </div>
             <div v-else
                 class="resource-item import-item import-item--disabled" @click="emit('open-settings')"
@@ -111,48 +86,33 @@
                     {{ folder.name }}
                 </div>
             </div>
-            <!-- 当前目录资源 -->
+            <!-- 当前目录资源（来自全局库） -->
             <div v-for="res in currentFiles" :key="res.value" class="resource-item"
-                :class="{ 'resource-item--missing': !!res.missing }"
-                @click="onResourceClick(res)"
+                @click="applyResourceToSelection(res)"
                 @contextmenu.prevent="onResourceContextMenu(res, $event)"
                 @mouseenter="onResourceMouseEnter(res, $event)"
                 @mousemove="onResourceMouseMove($event)" @mouseleave="onResourceMouseLeave">
                 <div class="resource-thumb">
-                    <template v-if="res.previewUrl && !res.missing">
+                    <template v-if="res.previewUrl">
                         <img :src="res.previewUrl" :alt="res.label" />
-                    </template>
-                    <template v-else-if="res.missing">
-                        <div class="resource-placeholder resource-placeholder--missing"
-                            :title="`全局库缺失：${res.globalRelPath || res.value}`">缺失</div>
                     </template>
                     <template v-else>
                         <div class="resource-placeholder">无预览</div>
                     </template>
                 </div>
-                <div class="resource-label" :title="res.missing
-                    ? `缺失：${res.globalRelPath || res.value}`
-                    : res.value">
+                <div class="resource-label" :title="res.value">
                     {{ res.label }}
                 </div>
-                <!-- 全局资源库 tab 下显示一个"用到项目"按钮 -->
-                <button v-if="activeTab === 'global'" class="use-in-project-btn" type="button"
-                    title="把该资源加入到当前项目"
-                    @click.stop="onUseInProject(res)">
-                    ➕项目
-                </button>
-                <!-- 项目 tab 下显示一个"移除引用"按钮（只删项目里的引用，不动全局库） -->
-                <button v-if="activeTab === 'project'" class="use-in-project-btn remove-from-project-btn"
-                    type="button"
-                    title="从当前项目移除引用（不会删除全局库里的文件）"
-                    @click.stop="onRemoveFromProject(res)">
-                    ✕移除
+                <button class="use-in-project-btn remove-from-project-btn" type="button"
+                    title="从全局资源库删除（移到 .trash，可找回）"
+                    @click.stop="emit('delete-from-global', res)">
+                    ✕删除
                 </button>
             </div>
             <!-- 空态提示 -->
-            <div v-if="currentFolders.length === 0 && currentFiles.length === 0"
+            <div v-if="globalRootConfigured && currentFolders.length === 0 && currentFiles.length === 0"
                 class="resources-empty-hint">
-                {{ currentPath ? '当前目录为空，拖入文件夹即可导入到此目录' : '把文件夹拖到这里即可按目录层级导入' }}
+                {{ currentPath ? '当前目录为空，拖入文件夹即可导入到此目录' : '把文件夹拖到这里即可按目录层级导入到全局库' }}
             </div>
         </div>
         <!-- 资源预览悬浮窗 -->
@@ -174,13 +134,12 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 
 interface ResourceItem {
     label: string;
+    /** 绝对磁盘路径（= widget.image 运行时使用的值）。 */
     value: string;
-    /** schema 2.0.0 起，项目资源必有；全局 Tab 条目也有（等于 relPath）。 */
-    globalRelPath?: string;
+    /** 全局库根的相对路径（反斜杠风格），面包屑/子目录聚合用。 */
+    relPath?: string;
     localPath?: string;
     previewUrl?: string;
-    /** 当前机器全局库里找不到此文件：面板上半透明 + 缺失角标。 */
-    missing?: boolean;
 }
 
 interface FolderNode {
@@ -192,7 +151,6 @@ interface FolderNode {
 const props = defineProps({
     height: { type: Number, default: 200 },
     collapsed: { type: Boolean, default: false },
-    imageResources: { type: Array as () => ResourceItem[], default: () => [] },
     /** 全局资源库条目（来自 useGlobalResourceLibrary），当没有配置路径时为空数组。 */
     globalResources: { type: Array as () => ResourceItem[], default: () => [] },
     /** 全局资源库是否已配置了 root 路径；未配置时隐藏"导入到全局库"按钮并给出引导。 */
@@ -207,19 +165,11 @@ const panelRef = defineModel('panelRef');
 const gridRef = defineModel('gridRef');
 
 const emit = defineEmits([
-    /**
-     * 从项目 Tab 触发导入：App.vue 负责先检查全局库是否配置好，
-     * 然后走全局库流水线，完成后自动把新条目登记到项目 imageResources。
-     */
+    /** "导入资源…"按钮：打开 ImportResourceDialog，导入到全局库。 */
     'import-resources',
-    /** 从全局 Tab 触发导入：打开 ImportResourceDialog，落到全局库本身。 */
-    'import-to-global',
-    /** 在"全局资源库"Tab 下 "+项目" 按钮：把该条目登记到当前项目。 */
-    'use-in-project',
-    /** 从全局库软删除资源（级联把项目里对应条目标 missing）。 */
+    /** 从全局库软删除资源（右键 / ✕删除按钮）。 */
     'delete-from-global',
-    /** 从当前项目 Tab 的右键菜单移除引用（不影响全局库文件）。 */
-    'remove-from-project',
+    /** 单击资源：把绝对路径 apply 到选中控件。 */
     'apply-resource',
     'drag-enter',
     'drag-over',
@@ -233,19 +183,6 @@ const emit = defineEmits([
     /** 未配置全局库时，让用户一键打开设置 */
     'open-settings',
 ]);
-
-// 当前激活 tab：project = 当前项目资源；global = 全局共享资源库
-const activeTab = ref<'project' | 'global'>('project');
-const switchTab = (t: 'project' | 'global') => {
-    if (activeTab.value === t) return;
-    activeTab.value = t;
-    // 切换 tab 时重置面包屑，避免两个源共享路径状态引起误解
-    currentPath.value = '';
-};
-
-const activeResources = computed<ResourceItem[]>(() =>
-    activeTab.value === 'global' ? (props.globalResources || []) : (props.imageResources || []),
-);
 
 // 当前浏览的子目录（相对路径，使用反斜杠分隔；空字符串表示根目录）
 const currentPath = ref('');
@@ -264,13 +201,16 @@ const currentPrefix = computed(() => {
 });
 
 // 当前目录下的直接子文件夹（聚合 + 统计项数）
+// 统一从全局库聚合——这是整个面板的唯一资源源。
 const currentFolders = computed<FolderNode[]>(() => {
     const prefix = currentPrefix.value;
     const counts = new Map<string, number>();
-    for (const res of activeResources.value) {
-        const val = normalizePath(res.value);
-        if (prefix && !val.startsWith(prefix)) continue;
-        const rest = val.slice(prefix.length);
+    for (const res of props.globalResources || []) {
+        // 面包屑按 relPath 做；没有 relPath 的（库外资源）不参与目录聚合。
+        const rel = normalizePath(res.relPath || '');
+        if (!rel) continue;
+        if (prefix && !rel.startsWith(prefix)) continue;
+        const rest = rel.slice(prefix.length);
         const idx = rest.indexOf('\\');
         if (idx > 0) {
             const name = rest.slice(0, idx);
@@ -290,10 +230,11 @@ const currentFolders = computed<FolderNode[]>(() => {
 const currentFiles = computed<ResourceItem[]>(() => {
     const prefix = currentPrefix.value;
     const out: ResourceItem[] = [];
-    for (const res of activeResources.value) {
-        const val = normalizePath(res.value);
-        if (prefix && !val.startsWith(prefix)) continue;
-        const rest = val.slice(prefix.length);
+    for (const res of props.globalResources || []) {
+        const rel = normalizePath(res.relPath || '');
+        if (!rel) continue;
+        if (prefix && !rel.startsWith(prefix)) continue;
+        const rest = rel.slice(prefix.length);
         if (!rest.includes('\\')) out.push(res);
     }
     return out;
@@ -323,49 +264,32 @@ const goUp = () => {
 };
 
 const onImportResourcesClick = () => {
-    if (activeTab.value === 'global') {
-        if (!props.globalRootConfigured) {
-            emit('open-settings');
-            return;
-        }
-        emit('import-to-global', { basePath: currentPath.value });
-    } else {
-        emit('import-resources', { basePath: currentPath.value });
+    if (!props.globalRootConfigured) {
+        emit('open-settings');
+        return;
     }
+    emit('import-resources', { basePath: currentPath.value });
 };
+
 const applyResourceToSelection = (res: ResourceItem) => emit('apply-resource', res);
-// 单击资源：
-//  - 当前项目 Tab：把资源应用到选中控件
-//  - 全局资源库 Tab：也应用到选中控件（但前提是该资源已经在 projet.resources 里有条目）
-//    通过右下角的"➕项目"按钮来显式"登记"到项目。
-const onResourceClick = (res: ResourceItem) => {
-    applyResourceToSelection(res);
-};
-const onUseInProject = (res: ResourceItem) => emit('use-in-project', res);
-const onRemoveFromProject = (res: ResourceItem) => emit('remove-from-project', res);
+
+/** 右键 = 从全局库删除。 */
 const onResourceContextMenu = (res: ResourceItem, _e: MouseEvent) => {
-    if (activeTab.value === 'global') {
-        emit('delete-from-global', res);
-    } else {
-        // 项目 Tab：右键快捷"移除引用"
-        emit('remove-from-project', res);
-    }
+    emit('delete-from-global', res);
 };
 
 const onResourcesDragEnter = (e: DragEvent) => emit('drag-enter', e);
 const onResourcesDragOver = (e: DragEvent) => emit('drag-over', e);
 const onResourcesDragLeave = (e: DragEvent) => {
-    // 离开网格时清掉文件夹高亮
     dragOverFolder.value = '';
     emit('drag-leave', e);
 };
 const onResourcesDrop = (e: DragEvent) => {
-    // 如果正好落在某个文件夹卡片上，由 onFolderDrop 处理；否则放到当前目录
     if (dragOverFolder.value) {
         dragOverFolder.value = '';
         return;
     }
-    emit('drop', e, { basePath: currentPath.value, scope: activeTab.value });
+    emit('drop', e, { basePath: currentPath.value });
 };
 
 // 文件夹卡片上的拖拽：放到该文件夹里
@@ -381,7 +305,7 @@ const onFolderDragLeave = (folder: FolderNode, _e: DragEvent) => {
 const onFolderDrop = (folder: FolderNode, e: DragEvent) => {
     e.stopPropagation();
     dragOverFolder.value = '';
-    emit('drop', e, { basePath: folder.path, scope: activeTab.value });
+    emit('drop', e, { basePath: folder.path });
 };
 
 const onResourceMouseEnter = (res: ResourceItem, e: MouseEvent) => emit('hover-enter', res, e);
@@ -493,7 +417,7 @@ onMounted(async () => {
                 if (basePath === null) return;
                 const paths: string[] = Array.isArray(payload.paths) ? payload.paths : [];
                 if (!paths.length) return;
-                emit('drop-paths', paths, { basePath, scope: activeTab.value });
+                emit('drop-paths', paths, { basePath });
             }
         });
     } catch (e) {
@@ -580,6 +504,65 @@ onBeforeUnmount(() => {
     line-height: 14px;
 }
 
+.resources-subtitle {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    color: #c8d5ef;
+    background: rgba(100, 162, 255, 0.14);
+    padding: 2px 8px;
+    border-radius: 10px;
+    letter-spacing: 0.3px;
+}
+
+.subtitle-badge {
+    font-size: 10px;
+    padding: 0 5px;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.18);
+    color: #fff;
+    line-height: 14px;
+}
+
+.count-warn {
+    color: #f0b4b4;
+    font-weight: 600;
+}
+
+.registered-badge {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    z-index: 1;
+    width: 16px;
+    height: 16px;
+    line-height: 14px;
+    border-radius: 50%;
+    font-size: 10px;
+    text-align: center;
+    background: rgba(255, 255, 255, 0.08);
+    color: #8a94aa;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    font-weight: 700;
+    pointer-events: none;
+}
+
+.registered-badge--on {
+    background: #2d7fff;
+    color: #ffffff;
+    border-color: #2d7fff;
+    box-shadow: 0 0 0 2px rgba(45, 127, 255, 0.22);
+}
+
+.resource-item--registered {
+    border-color: #2d5fb3;
+}
+
+.resource-item--registered:hover {
+    border-color: #64a2ff;
+}
+
 .inline-btn {
     border: none;
     background: transparent;
@@ -590,9 +573,10 @@ onBeforeUnmount(() => {
     font-size: inherit;
 }
 
+/* 主操作按钮（"+项目" / "✕移除"）：hover 时显现，避开右上角的登记徽章 */
 .use-in-project-btn {
     position: absolute;
-    top: 4px;
+    top: 24px;
     right: 4px;
     font-size: 10px;
     padding: 2px 6px;

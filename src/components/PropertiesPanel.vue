@@ -258,7 +258,7 @@
                     />
 
                     <label for="widget-image-select">图片资源（Frame.image）</label>
-                    <v-select
+                    <v-autocomplete
                         id="widget-image-select"
                         v-model="selectedWidget.image"
                         :items="imageResourceItems"
@@ -267,7 +267,10 @@
                         density="compact"
                         variant="outlined"
                         hide-details
-                        title="选择图片资源"
+                        clearable
+                        :menu-props="{ maxHeight: 360 }"
+                        title="在全局资源库中搜索并选择图片（支持文件名 / 子目录关键字）"
+                        placeholder="输入关键字搜索…"
                     />
                     <label for="widget-image-custom">自定义路径（可直接编辑）</label>
                     <v-text-field
@@ -744,7 +747,7 @@
 
             <div class="prop-group">
                 <label>批量图片资源</label>
-                <v-select
+                <v-autocomplete
                     :model-value="batchImage"
                     @update:model-value="$emit('update:batchImage', $event)"
                     :items="imageResourceBatchItems"
@@ -753,7 +756,10 @@
                     density="compact"
                     variant="outlined"
                     hide-details
-                    title="选择一张图片应用到所有支持图片的控件"
+                    clearable
+                    :menu-props="{ maxHeight: 360 }"
+                    title="在全局资源库中搜索图片，应用到所有支持图片的控件"
+                    placeholder="输入关键字搜索…"
                 />
                 <label for="batch-image-custom">自定义路径</label>
                 <v-text-field
@@ -831,7 +837,8 @@ const props = defineProps({
     selectedIds: { type: Array, default: () => [] },
     allWidgetTypes: { type: Array, default: () => [] },
     parentCandidates: { type: Array, default: () => [] },
-    imageResources: { type: Array, default: () => [] },
+    /** 全局资源库条目；schema 2.0.0 起这是控件"图片"下拉的唯一来源。 */
+    globalResources: { type: Array, default: () => [] },
     propertyTabs: { type: Array, default: () => [] },
     activePropertyTab: { type: String, default: 'props' },
     currentWidgetAnimations: { type: Array, default: () => [] },
@@ -1008,18 +1015,20 @@ const fdfTemplateItems = computed(() => [
     })),
 ]);
 
+// schema 2.0.0：下拉直接列出整个全局资源库；value = 绝对路径（widget.image 的运行时值）。
+// 同名文件在不同子目录里很常见，title 里附上 relPath 便于辨认。
 const imageResourceItems = computed(() => [
     { title: '无', value: '' },
-    ...props.imageResources.map((res) => ({
-        title: `${res.label}（${res.value}）`,
+    ...props.globalResources.map((res: any) => ({
+        title: res.relPath ? `${res.label}（${res.relPath}）` : res.label,
         value: res.value,
     })),
 ]);
 
 const imageResourceBatchItems = computed(() => [
     { title: '不修改', value: '' },
-    ...props.imageResources.map((res) => ({
-        title: `${res.label}（${res.value}）`,
+    ...props.globalResources.map((res: any) => ({
+        title: res.relPath ? `${res.label}（${res.relPath}）` : res.label,
         value: res.value,
     })),
 ]);

@@ -7,14 +7,16 @@ import { decodeTgaToDataUrl } from '../utils/tgaDecoder';
  * 全局资源库（跨项目共享，路径由用户在"设置"里配置）。
  *
  * 设计约束：
- * - 所有磁盘 IO 都通过 `invoke` 调后端 Rust command，**不**经 `@tauri-apps/plugin-fs`，
+ * - 所有磁盘 IO 通过 `invoke` 调后端 Rust command，**不**经 `@tauri-apps/plugin-fs`，
  *   用户可以把库放到任意盘符而不受 `fs:scope` 白名单限制。
  * - `root` 为空字符串时表示"尚未配置"，所有写入操作都应被 UI 禁用。
  * - 预览 URL 生成策略：
- *   - blp    → `invoke('blp_decode_to_png_base64')`，返回 PNG dataURL
- *   - tga    → 前端 `decodeTgaToDataUrl`（复用既有工具）
- *   - 其他   → `invoke('read_file_as_base64')` 生成 `data:image/<ext>;base64,...` dataURL，
- *             避免依赖 `convertFileSrc` / `fs:scope`（因为库可能在 D: 等非白名单目录）。
+ *   - blp    → `invoke('blp_decode_to_png_base64')`
+ *   - tga    → 前端 `decodeTgaToDataUrl`
+ *   - 其他   → `invoke('read_file_as_base64')` 生成 dataURL
+ *
+ * schema 2.0.0 起，项目不再维护 `imageResources` 登记表——widget 直接引用绝对路径。
+ * 所以本 composable 也不再提供 `useInProject / hydrate / cascade` 这类登记辅助函数。
  */
 
 export interface GlobalResourceEntry {
@@ -62,9 +64,6 @@ const mimeForExt = (ext: string): string => {
     }
 };
 
-/**
- * 为任意全局库条目生成 previewUrl；优先使用缓存，避免重复解码。
- */
 export function usePreviewResolver() {
     const cache = new Map<string, string>();
     const inflight = new Map<string, Promise<string>>();
@@ -109,41 +108,19 @@ export function usePreviewResolver() {
     };
 
     const invalidate = (absPath?: string) => {
-        if (absPath) {
-            cache.delete(absPath);
-        } else {
-            cache.clear();
-        }
+        if (absPath) cache.delete(absPath);
+        else cache.clear();
     };
 
     return { resolve, invalidate };
 }
 
-/**
- * 使用前端 "war3mapImported\\" 前缀 + 全局库相对路径拼出项目侧的资源 value。
- * 这样全局库里的 `icons/gold.blp` 最终落到项目里就是 `war3mapImported\\icons\\gold.blp`，
- * 和 wc3-map-ts-template 的资源契约一致，也能被 `ui_normalize_resource_paths` 识别。
- */
-const WAR3_IMPORTED_PREFIX = 'war3mapImported\\';
-
-export function toProjectValueFromGlobalRel(relPath: string): string {
-    const rel = (relPath || '').replace(/\//g, '\\').replace(/^\\+/, '');
-    return WAR3_IMPORTED_PREFIX + rel;
-}
-
-/**
- * 反斜杠归一化 + 去前导分隔符，保证 `globalRelPath` 在全仓上下文里有单一形态。
- */
+/** 反斜杠归一化 + 去前导分隔符，保证 relPath 在全仓上下文里有单一形态。 */
 export function normalizeGlobalRelPath(rel: string): string {
     return (rel || '').replace(/\//g, '\\').replace(/^\\+/, '');
 }
 
-/**
- * 把全局库相对路径拼成当前机器上的绝对路径。root 为空时返回空串，
- * 调用方应把结果同时写进 `ImageResource.localPath`（或视为 missing）。
- *
- * 只服务于 Windows 桌面端（WC3 主场景），直接用反斜杠拼。
- */
+/** 把全局库相对路径拼成当前机器上的绝对路径。root 为空时返回空串。 */
 export function buildLocalPathFromRel(root: string, rel: string): string {
     if (!root || !rel) return '';
     const normRoot = root.replace(/[\\/]+$/, '');
@@ -160,13 +137,15 @@ export function useGlobalResourceLibrary(
     const loading = ref(false);
     const { resolve: resolvePreview, invalidate: invalidatePreview } = usePreviewResolver();
 
-    /** 将后端 entry 转成面向 UI 的 ImageResource（全局 Tab 行）。
-     *  全局库条目里，`globalRelPath === value === relPath`——但项目 Tab 不同，
-     *  项目里 value 是 `war3mapImported\\<rel>`，见 `useInProject`。 */
+    /** 后端 entry -> 前端 ImageResource。
+     *  - value = 绝对路径（也就是 widget.image 运行时使用的值）
+     *  - relPath = 相对全局库根的 relPath（反斜杠风格）
+     *  - localPath = 绝对路径（alias；保留给可能引用此字段的旧代码）
+     */
     const toImageResource = (e: GlobalResourceEntry): ImageResource => ({
         label: e.name,
-        globalRelPath: e.relPath,
-        value: e.relPath,
+        value: e.absPath,
+        relPath: e.relPath,
         localPath: e.absPath,
         previewUrl: '',
     });
@@ -196,7 +175,6 @@ export function useGlobalResourceLibrary(
         }
     };
 
-    /** 异步补齐所有条目的 previewUrl；不会阻塞 UI。 */
     const fillPreviews = async () => {
         const snapshot = entries.value.slice();
         for (const entry of snapshot) {
@@ -208,7 +186,6 @@ export function useGlobalResourceLibrary(
         }
     };
 
-    /** 触发后端导入。自动刷新列表。 */
     const importSources = async (opts: {
         sources: string[];
         subDir?: string;
@@ -245,49 +222,19 @@ export function useGlobalResourceLibrary(
         }
     };
 
-    /**
-     * 软删除全局库条目，并**级联**把项目里所有 `globalRelPath === relPath`
-     * 的引用标记为 missing（清空 localPath/previewUrl，但保留条目，让用户
-     * 之后可以手动重新导入替换，或自己决定是否"移除引用"）。
-     *
-     * 传 `projectResources` 表示希望级联；不传就只动全局库。
-     */
-    const removeEntry = async (
-        relPath: string,
-        projectResources?: Ref<ImageResource[]>,
-    ): Promise<{ ok: boolean; affected: number }> => {
-        if (!root.value) return { ok: false, affected: 0 };
+    /** 软删除一条全局库文件（会被搬去 .trash 目录，后端处理）。 */
+    const removeEntry = async (relPath: string): Promise<{ ok: boolean }> => {
+        if (!root.value) return { ok: false };
         try {
             await invoke('global_resource_delete', { root: root.value, relPath });
             invalidatePreview();
-            const affected = projectResources
-                ? markProjectRefsMissing(projectResources, relPath)
-                : 0;
             await refresh();
-            return { ok: true, affected };
+            return { ok: true };
         } catch (e: any) {
             console.error('[globalLib] delete 失败：', e);
             message.value = '删除失败：' + (e?.message || String(e));
-            return { ok: false, affected: 0 };
+            return { ok: false };
         }
-    };
-
-    /** 把项目资源列表中命中 relPath 的条目标记为 missing；返回受影响条数。 */
-    const markProjectRefsMissing = (
-        projectResources: Ref<ImageResource[]>,
-        relPath: string,
-    ): number => {
-        const key = normalizeGlobalRelPath(relPath);
-        let n = 0;
-        const next = projectResources.value.map((r) => {
-            if (normalizeGlobalRelPath(r.globalRelPath || '') === key) {
-                n += 1;
-                return { ...r, localPath: undefined, previewUrl: '', missing: true };
-            }
-            return r;
-        });
-        if (n > 0) projectResources.value = next;
-        return n;
     };
 
     const setRoot = async (newRoot: string): Promise<SetRootResult> => {
@@ -343,126 +290,6 @@ export function useGlobalResourceLibrary(
         }
     };
 
-    /**
-     * 把全局库条目"引用"到项目资源里：不做任何磁盘拷贝，只登记 ImageResource。
-     * 新模型下 `globalRelPath` 是唯一身份；value 走 `war3mapImported\\<rel>`，
-     * localPath 指向全局库的绝对路径（用于预览/导出）。去重 key 统一为 globalRelPath。
-     */
-    const useInProject = (
-        res: ImageResource,
-        projectResources: Ref<ImageResource[]>,
-    ): ImageResource => {
-        // 兼容两种入参：
-        //  - 全局 Tab 的行（globalRelPath 与 value 同值，都是 relPath）
-        //  - 调用方手工拼的 { globalRelPath, ... }
-        const rel = normalizeGlobalRelPath(res.globalRelPath || res.value || '');
-        const value = toProjectValueFromGlobalRel(rel);
-        const localPath =
-            res.localPath || buildLocalPathFromRel(root.value, rel) || undefined;
-
-        const existing = projectResources.value.find(
-            (r) => normalizeGlobalRelPath(r.globalRelPath || '') === rel,
-        );
-        if (existing) {
-            existing.localPath = localPath;
-            existing.value = value;
-            existing.missing = !localPath ? true : existing.missing;
-            if (res.previewUrl) existing.previewUrl = res.previewUrl;
-            return existing;
-        }
-        const entry: ImageResource = {
-            label: res.label,
-            globalRelPath: rel,
-            value,
-            localPath,
-            previewUrl: res.previewUrl || '',
-            missing: !localPath,
-        };
-        projectResources.value = [...projectResources.value, entry];
-        return entry;
-    };
-
-    /**
-     * 一站式：把外部文件导入全局库 + 立即登记为项目引用（去重）。
-     * 返回导入结果（可用于展示告警）。项目 Tab 的"导入资源"应直接调用这个。
-     */
-    const importAndRefInProject = async (
-        opts: {
-            sources: string[];
-            subDir?: string;
-            convertToBlp?: boolean;
-            overwrite?: boolean;
-        },
-        projectResources: Ref<ImageResource[]>,
-    ): Promise<ImportResult> => {
-        const result = await importSources(opts);
-        for (const e of result.entries || []) {
-            // 直接用后端返回的 entry，不依赖前端 list 刷新时机。
-            useInProject(toImageResource(e), projectResources);
-        }
-        // 补预览（BLP/TGA/普通图），异步，不阻塞返回。
-        void fillProjectPreviews(projectResources);
-        return result;
-    };
-
-    /**
-     * 给项目资源列表里还没 previewUrl 的条目刷一遍预览。
-     * 专供载入 / 导入后调用；不会触碰已经有 previewUrl 的条目，避免闪烁。
-     */
-    const fillProjectPreviews = async (
-        projectResources: Ref<ImageResource[]>,
-    ) => {
-        const snapshot = projectResources.value.slice();
-        for (const r of snapshot) {
-            if (r.missing) continue;
-            if (r.previewUrl) continue;
-            const abs = r.localPath;
-            if (!abs) continue;
-            const ext = (r.label.split('.').pop() || '').toLowerCase();
-            const url = await resolvePreview(abs, ext);
-            if (!url) continue;
-            const cur = projectResources.value.find(
-                (x) => normalizeGlobalRelPath(x.globalRelPath || '') ===
-                    normalizeGlobalRelPath(r.globalRelPath || ''),
-            );
-            if (cur) cur.previewUrl = url;
-        }
-    };
-
-    /**
-     * 载入 .uiproj 之后用：把磁盘上只有 `{label, globalRelPath, value}`
-     * 的原始条目，补齐 `localPath` / `missing` 字段；不做预览（交给 fillProjectPreviews）。
-     */
-    const hydrateProjectRefs = async (
-        raw: Array<{ label: string; globalRelPath: string; value?: string }>,
-    ): Promise<ImageResource[]> => {
-        const out: ImageResource[] = [];
-        for (const r of raw) {
-            const rel = normalizeGlobalRelPath(r.globalRelPath || '');
-            const value = r.value || toProjectValueFromGlobalRel(rel);
-            const abs = buildLocalPathFromRel(root.value, rel);
-            let missing = !abs;
-            if (abs) {
-                try {
-                    const exists = await invoke<boolean>('path_exists', { path: abs });
-                    missing = !exists;
-                } catch {
-                    missing = true;
-                }
-            }
-            out.push({
-                label: r.label,
-                globalRelPath: rel,
-                value,
-                localPath: missing ? undefined : abs,
-                previewUrl: '',
-                missing,
-            });
-        }
-        return out;
-    };
-
-    // 路径变化时自动重扫
     watch(
         root,
         () => {
@@ -473,12 +300,10 @@ export function useGlobalResourceLibrary(
     );
 
     return {
-        // State
         entries,
         resources,
         warnings,
         loading,
-        // Ops
         refresh,
         importSources,
         removeEntry,
@@ -486,12 +311,6 @@ export function useGlobalResourceLibrary(
         migrate,
         getDiskFree,
         pathExists,
-        useInProject,
-        importAndRefInProject,
-        hydrateProjectRefs,
-        fillProjectPreviews,
-        markProjectRefsMissing,
-        // Preview helpers（供 useResourceManager 复用）
         resolvePreview,
         invalidatePreview,
     };

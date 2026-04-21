@@ -1,7 +1,16 @@
 // 通用类型定义
-// Project schema version used when persisting *.uiproj.
-// Bump when the on-disk widget schema changes.
-export const PROJECT_SCHEMA_VERSION = '1.1.0';
+//
+// schema 2.0.0：资源模型彻底重写。
+//   - widget.image / clickImage / hoverImage 运行时（in-memory）存"绝对路径"，
+//     例如 `D:/wc3-assets/icons/foo.blp`，便于 UI 画布直接预览。
+//   - 落盘到 `.uiproj` 时由 useProjectFile 统一把绝对路径改写成相对全局资源库根的 relPath
+//     （形如 `icons\foo.blp`，始终反斜杠风格——和 war3 imported 路径一致）。
+//   - 载入时再把 relPath 展开成 `<globalResourceRoot>/<rel>` 绝对路径。
+//   - 导出代码时由插件拼成 `war3mapImported\icons\foo.blp`；拷贝资源时源头是绝对路径，
+//     目标保留相对目录层级。
+//
+// 不再有 `project.resources` 登记表——全局库就是唯一的资源源，控件直接引用。
+export const PROJECT_SCHEMA_VERSION = '2.0.0';
 
 /**
  * 文本水平对齐（对应模板 Text.ts 的 TextAlign: LEFT=0, CENTER=50, RIGHT=100）
@@ -103,12 +112,32 @@ export interface Settings {
     controlPanelWidth: number;
     canvasBgColor: string;
     canvasBgImage: string;
+    /**
+     * 全局资源库根目录（绝对路径）。用户级设置，仅存 localStorage，
+     * **不会写入 .uiproj**。为空时"导入资源…"会弹首次引导对话框。
+     */
+    globalResourceRootPath?: string;
+    /**
+     * 导入时是否默认把非 BLP 转成 BLP。用户级设置，不写入 .uiproj。
+     */
+    defaultConvertToBlp?: boolean;
 }
 
+/**
+ * 全局资源库的一条条目——仅作为运行时传值用，**不再落盘**到 .uiproj。
+ *
+ * - `label`：展示名（通常是文件名）。
+ * - `value`：为兼容旧插件接口而保留的字段，内容 = `war3mapImported\<relPath>`。
+ *   新代码里优先用 `localPath`。导出插件不再依赖它——useExport 会现场扫 widgets 派生。
+ * - `localPath`：绝对磁盘路径，`<globalResourceRoot>/<relPath>`。画布预览与导出都用它。
+ * - `relPath`：相对全局库根，反斜杠风格（`icons\foo.blp`）。保存 .uiproj 时写的就是它。
+ * - `previewUrl`：预览用 data URL / file URL；可能为空。
+ */
 export interface ImageResource {
     label: string;
     value: string;
     localPath?: string;
+    relPath?: string;
     previewUrl?: string;
 }
 

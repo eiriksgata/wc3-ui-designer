@@ -1,4 +1,4 @@
-import type { Animation, ImageResource, Settings, Widget } from './index';
+import type { Animation, Settings, Widget } from './index';
 
 export type ActionType =
     | 'createWidget'
@@ -55,7 +55,6 @@ export type DesignerAction =
 
 export interface DesignerSnapshot {
     widgets: Widget[];
-    resources: ImageResource[];
     animations: Animation[];
     settings: Settings;
 }

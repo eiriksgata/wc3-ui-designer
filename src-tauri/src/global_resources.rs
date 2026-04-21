@@ -697,3 +697,30 @@ pub fn read_file_as_base64(abs_path: String) -> Result<String, String> {
     f.read_to_end(&mut buf).map_err(|e| format!("读取文件失败: {e}"))?;
     Ok(B64.encode(&buf))
 }
+
+/// 把一个文件拷贝到任意绝对路径（会自动 `mkdir -p` 目标父目录）。
+///
+/// 专为"导出时把全局库里的资源拷到目标项目 `resource/` 子目录"设计——
+/// 目标路径可能跨盘、可能不在 `fs:scope` 白名单里，所以用 `std::fs::copy` 直接做。
+///
+/// - `overwrite = false` 时，若目标存在则直接成功返回（幂等，返回源文件大小）。
+/// - 返回值是本次写入的字节数（`fs::copy` 的返回），或原文件大小（跳过时）。
+#[tauri::command]
+pub fn copy_file_abs(src: String, dst: String, overwrite: bool) -> Result<u64, String> {
+    let src_p = PathBuf::from(&src);
+    let dst_p = PathBuf::from(&dst);
+    if !src_p.is_file() {
+        return Err(format!("源文件不存在或不是文件: {}", src));
+    }
+    if dst_p.exists() && !overwrite {
+        let size = fs::metadata(&src_p).map(|m| m.len()).unwrap_or(0);
+        return Ok(size);
+    }
+    if let Some(parent) = dst_p.parent() {
+        if !parent.as_os_str().is_empty() {
+            fs::create_dir_all(parent)
+                .map_err(|e| format!("创建目标目录失败: {e}"))?;
+        }
+    }
+    fs::copy(&src_p, &dst_p).map_err(|e| format!("拷贝失败 {} -> {}: {e}", src, dst))
+}

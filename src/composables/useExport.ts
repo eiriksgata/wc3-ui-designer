@@ -1,20 +1,52 @@
 import { ref, type Ref, onMounted } from 'vue';
 import { open as tauriOpen, save as tauriSave } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
-import { readFile, writeFile, writeTextFile, readTextFile, mkdir } from '@tauri-apps/plugin-fs';
+import { writeTextFile, readTextFile, mkdir } from '@tauri-apps/plugin-fs';
 import type { Widget, ImageResource, Animation, Settings } from '../types';
 import type { ExportPlugin, ExportContext } from '../types/plugin';
 import { usePluginSystem } from './usePluginSystem';
 
 type CurrentProjectPathRef = Ref<string | null> | (() => string | null) | null;
 
+/** 导出时用于"扫 widgets -> 反查全局库 -> 拷贝"的最小字段子集。 */
+interface GlobalLibEntry {
+    label?: string;
+    /** 绝对磁盘路径（schema 2.0.0 里 widget.image 运行时用的值）。 */
+    value: string;
+    localPath?: string;
+    /** 全局库下的 relPath（反斜杠风格，例 `icons\foo.blp`）。 */
+    relPath?: string;
+}
+
+const WAR3_PREFIX = 'war3mapImported\\';
+const IMAGE_FIELDS = ['image', 'clickImage', 'hoverImage'] as const;
+
+/** 判断是不是绝对磁盘路径。 */
+const isAbsolutePath = (s: string): boolean => {
+    if (!s) return false;
+    if (/^[a-zA-Z]:[\\/]/.test(s)) return true;
+    if (/^\\\\/.test(s)) return true;
+    if (s.startsWith('/')) return true;
+    return false;
+};
+
+/** 把绝对路径按全局库根推导 relPath；不在库下就只取文件名（兜底）。 */
+function deriveRelPath(abs: string, lookupByAbs: Map<string, GlobalLibEntry>): string {
+    const hit = lookupByAbs.get(abs) || lookupByAbs.get(abs.toLowerCase());
+    if (hit?.relPath) return hit.relPath.replace(/\//g, '\\').replace(/^\\+/, '');
+    // 兜底：用 basename
+    const parts = abs.split(/[\\/]/);
+    return parts[parts.length - 1] || abs;
+}
+
 export function useExport(
     widgetsList: Ref<Widget[]>,
-    imageResources: Ref<ImageResource[]>,
     settings: Ref<Settings>,
     message: Ref<string>,
     saveProjectToFile: () => Promise<boolean>,
     getAnimationsForExport: () => Record<string, Omit<Animation, 'id'>[]>,
+    /** 全局库条目列表（schema 2.0.0 起导出的权威来源）。 */
+    globalResources?: Ref<GlobalLibEntry[]>,
 ) {
     // currentProjectPath 将在外部设置（可以是 ref 或函数）
     let currentProjectPathRef: CurrentProjectPathRef = null;
@@ -206,6 +238,61 @@ export default plugin;
         return base || 'GeneratedUI';
     };
 
+    /**
+     * 在导出边界把 widget.image（运行时 = 绝对路径）改写成引擎侧 `war3mapImported\<rel>` 形式，
+     * 同时派生一个和历史 ExportContext 兼容的 imageResources 列表。
+     * 这样插件（lua/ts/jass/wc3-template-export 等）不需要知道新的路径模型。
+     */
+    const buildEngineWidgetsAndResources = (src: Widget[]): { widgets: Widget[]; imageResources: ImageResource[] } => {
+        const lookupByAbs = new Map<string, GlobalLibEntry>();
+        for (const g of globalResources?.value || []) {
+            if (g?.value) {
+                lookupByAbs.set(g.value, g);
+                lookupByAbs.set(g.value.toLowerCase(), g);
+            }
+            if (g?.localPath) {
+                lookupByAbs.set(g.localPath, g);
+                lookupByAbs.set(g.localPath.toLowerCase(), g);
+            }
+        }
+
+        const usedRel = new Map<string, { label: string; value: string; localPath?: string }>();
+
+        const rewriteValue = (v?: string): string => {
+            if (!v) return v || '';
+            // 已经是 `war3mapImported\...` 就保留不动
+            if (/^war3mapImported[\\/]/i.test(v)) return v;
+            if (!isAbsolutePath(v)) return v;
+            const rel = deriveRelPath(v, lookupByAbs);
+            const value = WAR3_PREFIX + rel;
+            const label = rel.split(/[\\/]/).pop() || rel;
+            if (!usedRel.has(value)) {
+                usedRel.set(value, { label, value, localPath: v });
+            }
+            return value;
+        };
+
+        const widgets = src.map((w) => {
+            const next: any = { ...w };
+            for (const f of IMAGE_FIELDS) {
+                const v = (w as any)[f];
+                if (typeof v === 'string' && v.length > 0) {
+                    next[f] = rewriteValue(v);
+                }
+            }
+            return next as Widget;
+        });
+
+        const imageResources: ImageResource[] = Array.from(usedRel.values()).map((r) => ({
+            label: r.label,
+            value: r.value,
+            localPath: r.localPath,
+            relPath: r.value.slice(WAR3_PREFIX.length),
+        }));
+
+        return { widgets, imageResources };
+    };
+
     // 使用选中的插件生成代码
     const generateCodeWithPlugin = async (widgets: Widget[], options: any = {}): Promise<string> => {
         if (!widgets || widgets.length === 0) {
@@ -218,10 +305,12 @@ export default plugin;
             throw new Error(`未找到插件: ${selectedExportPlugin.value}`);
         }
 
-        // 构建导出上下文
+        // schema 2.0.0：把 widget.image abs -> war3mapImported\... 再喂给插件
+        const { widgets: engineWidgets, imageResources: derivedResources } = buildEngineWidgetsAndResources(widgets);
+
         const context: ExportContext = {
-            widgets,
-            imageResources: imageResources.value,
+            widgets: engineWidgets,
+            imageResources: derivedResources,
             animations: getAnimationsForExport(),
             settings: {
                 canvasWidth: settings.value.canvasWidth,
@@ -527,77 +616,82 @@ export default plugin;
         const messages: string[] = [];
 
         try {
-            // 导出资源
+            // 导出资源（schema 2.0.0 模型）：
+            //   widget.image 是绝对路径 -> 在全局库里反查 relPath -> 拷到 exportPath/<rel>
             if (exportResourcesEnabled.value) {
                 if (!exportResourcesPath.value) {
                     messages.push('请选择资源导出路径');
                 } else {
                     try {
-                        // 确保目录存在
                         await mkdir(exportResourcesPath.value, { recursive: true });
 
-                        // 收集所有控件中使用的资源路径
-                        const usedResourceValues = new Set<string>();
-                        widgetsList.value.forEach(w => {
-                            if (w.image && w.image.trim()) {
-                                usedResourceValues.add(w.image);
+                        // 收集 widgets 引用到的所有绝对路径（三种图像字段都看）
+                        const usedAbs = new Set<string>();
+                        for (const w of widgetsList.value) {
+                            for (const f of IMAGE_FIELDS) {
+                                const v = (w as any)[f];
+                                if (typeof v === 'string' && v.trim()) usedAbs.add(v);
                             }
-                        });
+                        }
 
-                        // 只导出被使用的资源（且有 localPath 的资源）
-                        const allResources = imageResources.value || [];
-                        const resources = allResources.filter(r =>
-                            usedResourceValues.has(r.value) &&
-                            r.localPath &&
-                            r.localPath.trim()
-                        );
-
-                        if (usedResourceValues.size === 0) {
+                        if (usedAbs.size === 0) {
                             messages.push('没有控件使用资源，无需导出');
-                        } else if (resources.length === 0) {
-                            messages.push(`有 ${usedResourceValues.size} 个资源被使用，但这些资源没有本地路径，无法导出`);
                         } else {
+                            // 全局库按 abs 做查找表
+                            const lookup = new Map<string, GlobalLibEntry>();
+                            for (const g of globalResources?.value || []) {
+                                if (g?.value) lookup.set(g.value, g);
+                                if (g?.localPath && g.localPath !== g.value) lookup.set(g.localPath, g);
+                            }
+
+                            const sep = exportResourcesPath.value.includes('\\') ? '\\' : '/';
+                            const normalizeRel = (rel: string) =>
+                                (rel || '').replace(/[\\/]+/g, sep).replace(/^[\\/]+/, '');
+
                             let copiedCount = 0;
+                            const missing: string[] = [];
                             const errors: string[] = [];
 
-                            for (const res of resources) {
-                                try {
-                                    const fileName = res.localPath.split(/[/\\]/).pop();
-                                    if (!fileName) {
-                                        errors.push(`资源 ${res.label} 的文件名无效`);
-                                        continue;
-                                    }
-                                    const sep = exportResourcesPath.value.includes('\\') ? '\\' : '/';
-                                    const destPath = `${exportResourcesPath.value}${sep}${fileName}`;
+                            for (const abs of usedAbs) {
+                                // 非绝对路径 / 历史残留 `war3mapImported\...` 这里都跳过——
+                                // 新模型下 widget.image 必须是绝对路径才会拷贝。
+                                if (!isAbsolutePath(abs)) {
+                                    missing.push(abs);
+                                    continue;
+                                }
+                                const entry = lookup.get(abs);
+                                const src = entry?.localPath || abs;
+                                // rel: 优先取全局库给的 relPath；否则兜底用 basename
+                                let rel = entry?.relPath || '';
+                                if (!rel) {
+                                    const parts = abs.split(/[\\/]/);
+                                    rel = parts[parts.length - 1] || abs;
+                                }
+                                const destPath = `${exportResourcesPath.value}${sep}${normalizeRel(rel)}`;
 
-                                    // 读取源文件并写入目标文件
-                                    try {
-                                        const fileData = await readFile(res.localPath);
-                                        await writeFile(destPath, fileData);
-                                        copiedCount++;
-                                    } catch (readErr: any) {
-                                        errors.push(`资源 ${res.label} 的源文件不存在或无法读取: ${res.localPath}`);
-                                        continue;
-                                    }
+                                try {
+                                    await invoke('copy_file_abs', {
+                                        src,
+                                        dst: destPath,
+                                        overwrite: true,
+                                    });
+                                    copiedCount++;
                                 } catch (e: any) {
-                                    console.error('复制资源文件失败:', res.label, res.localPath, e);
-                                    errors.push(`资源 ${res.label} 复制失败: ${e.message}`);
+                                    console.error('复制资源文件失败:', abs, src, e);
+                                    errors.push(`${abs} 复制失败：${e.message || e}`);
                                 }
                             }
 
                             if (copiedCount > 0) {
-                                messages.push(`已导出 ${copiedCount}/${resources.length} 个使用的资源到：${exportResourcesPath.value}`);
+                                messages.push(`已导出 ${copiedCount}/${usedAbs.size} 个资源到：${exportResourcesPath.value}`);
+                            }
+                            if (missing.length > 0) {
+                                const preview = missing.slice(0, 3).join('、');
+                                const more = missing.length > 3 ? ' …' : '';
+                                messages.push(`有 ${missing.length} 个控件引用的资源不是绝对路径，跳过：${preview}${more}`);
                             }
                             if (errors.length > 0) {
                                 messages.push(`部分资源导出失败：${errors.slice(0, 3).join('; ')}${errors.length > 3 ? '...' : ''}`);
-                            }
-                            if (copiedCount === 0 && errors.length > 0) {
-                                messages.push('所有资源导出失败，请检查资源路径是否正确');
-                            }
-                            // 提示未导出的资源
-                            const notExported = usedResourceValues.size - resources.length;
-                            if (notExported > 0) {
-                                messages.push(`注意：有 ${notExported} 个使用的资源没有本地路径，未导出`);
                             }
                         }
                     } catch (e: any) {
@@ -690,6 +784,10 @@ export default plugin;
                         ) {
                             try {
                                 const sidecarPath = codeFilePath.replace(/\.(ts|tsx)$/i, '') + '.ui.json';
+                                // sidecar 是"引擎侧"权威来源：外部 codegen.mjs 需要 war3mapImported\<rel>。
+                                // 因此这里走 engine-rewritten 的 widgets，和 context.widgets 同一套。
+                                const { widgets: sidecarWidgets, imageResources: sidecarImgRes } =
+                                    buildEngineWidgetsAndResources(widgetsList.value);
                                 const sidecar = {
                                     version: 1,
                                     generator: 'wc3-template-export',
@@ -700,7 +798,8 @@ export default plugin;
                                         canvasWidth: settings.value.canvasWidth,
                                         canvasHeight: settings.value.canvasHeight,
                                     },
-                                    widgets: widgetsList.value,
+                                    widgets: sidecarWidgets,
+                                    imageResources: sidecarImgRes,
                                     animations: getAnimationsForExport(),
                                 };
                                 await writeTextFile(

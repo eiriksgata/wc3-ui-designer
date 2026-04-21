@@ -262,6 +262,7 @@ pub fn run() {
             global_resources::path_exists,
             global_resources::disk_free_space,
             global_resources::read_file_as_base64,
+            global_resources::copy_file_abs,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

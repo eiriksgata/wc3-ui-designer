@@ -256,15 +256,19 @@ struct UiListResourcesArgs {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 struct UiCopyResourcesArgs {
-    /// 目标目录。例如 wc3-map-ts-template 的 `resource/`；war3 相对路径会相对此目录展开。
+    /// 目标目录。例如 wc3-map-ts-template 的 `resource/`；每个资源按"相对全局库根"的子路径
+    /// 落进去，没配 `globalResourceRoot` 时退化为只用 basename。
     #[serde(rename = "targetDir")]
     target_dir: String,
-    /// 只拷贝这些 `value`（war3 相对路径）；留空 = 拷贝所有被 widget 引用的资源。
+    /// 只拷贝这些 `value`；留空 = 拷贝所有被 widget 引用到的值。
     #[serde(default)]
     values: Option<Vec<String>>,
     /// 目标已存在时是否覆盖，默认 true。
     #[serde(default)]
     overwrite: Option<bool>,
+    /// 全局资源库根；用来把 widget 的绝对路径解析成"库内相对路径"，决定目标子目录层级。
+    #[serde(default, rename = "globalResourceRoot")]
+    global_resource_root: Option<String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -272,6 +276,11 @@ struct UiNormalizeResourcePathsArgs {
     /// 期望的 war3 前缀，默认 `war3mapImported/`。
     #[serde(default)]
     prefix: Option<String>,
+    /// 全局资源库根目录（schema 2.0.0 起必需）。
+    /// 若 widget 里有裸绝对路径而此字段又没给，会返回 `ok: false` + 诊断，不改工程。
+    /// 常规做法是让设计器在 Settings 里配好路径，本字段留空即可——engine 会读取设计器注入的值。
+    #[serde(default)]
+    global_resource_root: Option<String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -462,7 +471,12 @@ impl UiDesignerMcp {
     ) -> Result<Json<UiDesignerEnvelope>, McpError> {
         let eng = self.engine.lock().await;
         let data = eng
-            .copy_resources(args.target_dir, args.values, args.overwrite.unwrap_or(true))
+            .copy_resources(
+                args.target_dir,
+                args.values,
+                args.overwrite.unwrap_or(true),
+                args.global_resource_root,
+            )
             .await
             .map_err(|e| McpError::internal_error(e, None))?;
         let diags: Vec<String> = data
@@ -478,14 +492,14 @@ impl UiDesignerMcp {
         Ok(Json(ok_envelope(data, diags)))
     }
 
-    #[tool(description = "把 widget 里裸绝对路径（例如 AI 直接贴进来的 C:\\Users\\...\\icon.png）登记为 ImageResource，并把 widget 字段改写为 `war3mapImported/<basename>` 等相对路径。通常在 ui_apply_actions 之后、ui_copy_resources 之前调用。")]
+    #[tool(description = "把 widget 里裸绝对路径（例如 AI 直接贴进来的 C:\\Users\\...\\icon.png）指向的文件**拷进全局资源库**，并把 widget 字段改写为**全局库内的绝对路径**（schema 2.0.0：widget.image 运行时 = 绝对磁盘路径；.uiproj 落盘时由设计器前端统一转成相对路径）。schema 2.0.0 起**必须有全局资源库**：可以在 `global_resource_root` 参数里传，也可以让用户在设计器 Settings 里配好；两处都缺就返回 `data.ok = false` + `data.diagnostics`，不改工程。通常在 `ui_apply_actions` 之后、`ui_copy_resources` 之前调用。")]
     async fn ui_normalize_resource_paths(
         &self,
         Parameters(args): Parameters<UiNormalizeResourcePathsArgs>,
     ) -> Result<Json<UiDesignerEnvelope>, McpError> {
         let (data, snap_value) = {
             let mut eng = self.engine.lock().await;
-            let data = eng.normalize_resource_paths(args.prefix);
+            let data = eng.normalize_resource_paths(args.prefix, args.global_resource_root);
             let snap = eng.get_snapshot();
             let sv = serde_json::to_value(&snap)
                 .map_err(|e| McpError::internal_error(e.to_string(), None))?;
