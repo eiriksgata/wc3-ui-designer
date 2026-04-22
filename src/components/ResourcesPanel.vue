@@ -153,6 +153,9 @@
                 <button class="ctx-menu-item" type="button" @click="ctxApplyFile">
                     <span class="ctx-icon">★</span>应用到选中控件
                 </button>
+                <button class="ctx-menu-item" type="button" @click="ctxOpenCurrentDirectory">
+                    <span class="ctx-icon">📂</span>打开当前目录
+                </button>
                 <div class="ctx-menu-sep"></div>
                 <button class="ctx-menu-item ctx-menu-item--danger" type="button" @click="ctxDeleteFile">
                     <span class="ctx-icon">✕</span>从全局库删除…
@@ -177,6 +180,7 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { invoke } from '@tauri-apps/api/core';
 
 interface ResourceItem {
     label: string;
@@ -406,6 +410,22 @@ const ctxApplyFile = () => {
 const ctxDeleteFile = () => {
     if (contextMenu.value.res) emit('delete-from-global', contextMenu.value.res);
     closeContextMenu();
+};
+const ctxOpenCurrentDirectory = async () => {
+    const dir = currentDirectoryAbsolutePath.value;
+    if (!dir) {
+        closeContextMenu();
+        return;
+    }
+    try {
+        await invoke('open_file_with_default_editor', {
+            filePath: dir,
+        });
+    } catch (e) {
+        console.error('[ResourcesPanel] 打开当前目录失败', dir, e);
+    } finally {
+        closeContextMenu();
+    }
 };
 const ctxOpenFolder = () => {
     if (contextMenu.value.folder) enterFolder(contextMenu.value.folder.name);

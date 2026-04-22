@@ -312,7 +312,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, nextTick, onBeforeUnmount, watch } from 'vue';
-import { open as tauriOpen, save as tauriSave } from '@tauri-apps/plugin-dialog';
+import { confirm as tauriConfirm, open as tauriOpen, save as tauriSave } from '@tauri-apps/plugin-dialog';
 import { readTextFile, writeTextFile, readFile, writeFile, mkdir, readDir } from '@tauri-apps/plugin-fs';
 import { decodeTgaToDataUrl } from './utils/tgaDecoder';
 import SettingsDialog from './components/SettingsDialog.vue';
@@ -629,7 +629,11 @@ const onImportToGlobalDialogToggle = (visible: boolean) => {
 // 注意：schema 2.0.0 起改为**硬删除**——调用 `global_resource_delete` 会直接从磁盘移除，
 // 不再挪去 .trash。UI 的确认文案也要相应更严重一些。
 const onDeleteFromGlobal = async (res: { value: string; label: string; relPath?: string }) => {
-  if (!confirm(`确定要从全局资源库彻底删除 "${res.label}" 吗？\n此操作会直接从磁盘删除文件，无法撤销。`)) return;
+  const ok = await tauriConfirm(`确定要从全局资源库彻底删除 "${res.label}" 吗？\n此操作会直接从磁盘删除文件，无法撤销。`, {
+    title: '确认删除',
+    kind: 'warning',
+  });
+  if (!ok) return;
   const key = (res as any).relPath || (res as any).globalRelPath || res.value;
   await globalLibRemove(key);
 };
@@ -642,7 +646,11 @@ const onDeleteFolderFromGlobal = async (folder: { path: string; name: string; co
   if (!folder?.path) return;
   const msg = `确定要从全局资源库彻底删除文件夹 "${folder.name}" 吗？\n` +
     `该文件夹下共 ${folder.count} 个资源将被一并从磁盘删除，无法撤销。`;
-  if (!confirm(msg)) return;
+  const ok = await tauriConfirm(msg, {
+    title: '确认删除文件夹',
+    kind: 'warning',
+  });
+  if (!ok) return;
   await globalLibRemove(folder.path);
 };
 

@@ -2,7 +2,6 @@ import { ref, computed, watch, type Ref } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import type { ImageResource } from '../types';
-import { decodeTgaToDataUrl } from '../utils/tgaDecoder';
 
 /**
  * 全局资源库（跨项目共享，路径由用户在"设置"里配置）。
@@ -12,9 +11,8 @@ import { decodeTgaToDataUrl } from '../utils/tgaDecoder';
  *   用户可以把库放到任意盘符而不受 `fs:scope` 白名单限制。
  * - `root` 为空字符串时表示"尚未配置"，所有写入操作都应被 UI 禁用。
  * - 预览 URL 生成策略：
- *   - blp    → `invoke('blp_decode_to_png_base64')`
- *   - tga    → 前端 `decodeTgaToDataUrl`
- *   - 其他   → `invoke('read_file_as_base64')` 生成 dataURL
+ *   - blp/tga → `invoke('*_decode_to_png_base64')`，由 Rust 统一转 PNG data URL
+ *   - 其他    → `invoke('read_file_as_base64')` 生成 dataURL
  *
  * schema 2.0.0 起，项目不再维护 `imageResources` 登记表——widget 直接引用绝对路径。
  * 所以本 composable 也不再提供 `useInProject / hydrate / cascade` 这类登记辅助函数。
@@ -81,6 +79,7 @@ const mimeForExt = (ext: string): string => {
 export function usePreviewResolver() {
     const cache = new Map<string, string>();
     const inflight = new Map<string, Promise<string>>();
+    const failedLogged = new Set<string>();
 
     const resolve = async (absPath: string, ext: string): Promise<string> => {
         if (!absPath) return '';
@@ -96,12 +95,8 @@ export function usePreviewResolver() {
                     return url;
                 }
                 if (lower === 'tga') {
-                    const b64 = await invoke<string>('read_file_as_base64', { absPath });
-                    const bin = atob(b64);
-                    const bytes = new Uint8Array(bin.length);
-                    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-                    const blob = new Blob([bytes], { type: 'application/octet-stream' });
-                    return await decodeTgaToDataUrl(blob);
+                    const url = await invoke<string>('tga_decode_to_png_base64', { absPath });
+                    return url;
                 }
                 if (['png', 'jpg', 'jpeg', 'bmp', 'gif', 'webp'].includes(lower)) {
                     const b64 = await invoke<string>('read_file_as_base64', { absPath });
@@ -109,7 +104,10 @@ export function usePreviewResolver() {
                 }
                 return '';
             } catch (e) {
-                console.warn('[globalLib] 生成预览失败：', absPath, e);
+                if (import.meta.env.DEV && !failedLogged.has(absPath)) {
+                    failedLogged.add(absPath);
+                    console.warn('[globalLib] 生成预览失败：', absPath, e);
+                }
                 return '';
             }
         })();

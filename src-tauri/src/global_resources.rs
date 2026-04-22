@@ -6,8 +6,9 @@
 //!   用户把全局库放到 `D:\`、`E:\`、外接盘、网络盘都能用。
 //! - 后端**不兜底到 `appLocalDataDir`**。所有 command 都把 `root` 作为入参，
 //!   由前端根据用户在 Settings 里填的 `globalResourceRootPath` 传入。
-//! - BLP 编解码走 `image_blp` crate（BLP1 + JPEG with alpha，兼容 WC3）。
-//!   不可用时，`convertToBlp` 会以结构化 warning 的形式降级为"仅拷贝"。
+//! - 导入时支持把 jpg/png/jpeg 转成 tga（由 `convertToBlp` 开关触发，历史字段名保留），
+//!   其余格式（blp/tga/bmp）保持原样拷贝。
+//! - BLP 编解码仅用于预览解码（blp -> png data url）。
 
 use std::fs;
 use std::io::{Read, Write};
@@ -17,11 +18,8 @@ use std::time::UNIX_EPOCH;
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as B64;
 use image::ImageOutputFormat;
-use image::imageops::FilterType;
-use image_blp::convert::{blp_to_image, image_to_blp, BlpOldFormat, BlpTarget};
-use image_blp::encode::save_blp;
+use image_blp::convert::blp_to_image;
 use image_blp::parser::load_blp;
-use image_blp::types::BlpImage as BlpImageType;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
 
@@ -246,25 +244,165 @@ fn probe_writable(root: &Path) -> bool {
     }
 }
 
-/// BLP 编码：对任意 DynamicImage → BLP1+JPEG（带 alpha），WC3 最兼容。
-fn encode_blp(img: image::DynamicImage, dst: &Path) -> Result<(), String> {
-    let blp: BlpImageType = image_to_blp(
-        img,
-        /* make_mipmaps */ true,
-        BlpTarget::Blp1(BlpOldFormat::Jpeg { has_alpha: true }),
-        FilterType::Lanczos3,
-    )
-    .map_err(|e| format!("BLP 编码失败: {e}"))?;
-
-    save_blp(&blp, dst).map_err(|e| format!("BLP 写入失败: {e}"))?;
+/// TGA 编码：把 jpg/png/jpeg 转成 tga。
+fn encode_tga(img: image::DynamicImage, dst: &Path) -> Result<(), String> {
+    img.save_with_format(dst, image::ImageFormat::Tga)
+        .map_err(|e| format!("TGA 写入失败: {e}"))?;
     Ok(())
+}
+
+fn le_u32_at(bytes: &[u8], offset: usize) -> Option<u32> {
+    let end = offset.checked_add(4)?;
+    let s = bytes.get(offset..end)?;
+    Some(u32::from_le_bytes([s[0], s[1], s[2], s[3]]))
+}
+
+fn bit_val(alpha: &[u8], bits: u32, index: usize) -> u8 {
+    match bits {
+        1 => {
+            let b = alpha.get(index / 8).copied().unwrap_or(0);
+            (b >> (7 - (index % 8))) & 1
+        }
+        4 => {
+            let b = alpha.get(index / 2).copied().unwrap_or(0);
+            if index % 2 == 0 {
+                (b >> 4) & 0x0f
+            } else {
+                b & 0x0f
+            }
+        }
+        8 => alpha.get(index).copied().unwrap_or(0),
+        _ => 0,
+    }
+}
+
+/// 针对旧/非标准 BLP1 Direct 文件的宽松解码：
+/// 当 mipmap[0] 头信息不合法时，尝试选择第一个在文件边界内的 mip 作为预览图。
+fn decode_blp1_direct_lenient(path: &Path) -> Result<image::DynamicImage, String> {
+    let bytes = fs::read(path).map_err(|e| format!("读取 BLP 文件失败: {e}"))?;
+    if bytes.len() < 1180 {
+        return Err("BLP 文件过小（非有效 BLP1）".to_string());
+    }
+    if bytes.get(0..4) != Some(b"BLP1") {
+        return Err("仅支持 BLP1 宽松解码".to_string());
+    }
+
+    let content = le_u32_at(&bytes, 4).ok_or_else(|| "BLP 头损坏（content）".to_string())?;
+    if content != 1 {
+        return Err("宽松解码仅处理 BLP1 Direct 内容".to_string());
+    }
+
+    let mut alpha_bits = le_u32_at(&bytes, 8).ok_or_else(|| "BLP 头损坏（alpha）".to_string())?;
+    if alpha_bits != 0 && alpha_bits != 1 && alpha_bits != 4 && alpha_bits != 8 {
+        alpha_bits = 0;
+    }
+    let width = le_u32_at(&bytes, 12).ok_or_else(|| "BLP 头损坏（width）".to_string())?;
+    let height = le_u32_at(&bytes, 16).ok_or_else(|| "BLP 头损坏（height）".to_string())?;
+    if width == 0 || height == 0 {
+        return Err("BLP 尺寸非法".to_string());
+    }
+
+    let palette = bytes
+        .get(156..(156 + 256 * 4))
+        .ok_or_else(|| "BLP 调色板越界".to_string())?;
+
+    let mut chosen: Option<(u32, u32, usize)> = None;
+    for i in 0..16usize {
+        let off = le_u32_at(&bytes, (7 + i) * 4).unwrap_or(0) as usize;
+        let size = le_u32_at(&bytes, (23 + i) * 4).unwrap_or(0) as usize;
+        if off == 0 || size == 0 {
+            continue;
+        }
+        let w = std::cmp::max(1, width >> i);
+        let h = std::cmp::max(1, height >> i);
+        let pix = (w as usize).saturating_mul(h as usize);
+        let alpha_bytes = if alpha_bits == 0 {
+            0usize
+        } else {
+            (pix.saturating_mul(alpha_bits as usize).saturating_add(7)) / 8
+        };
+        let min_need = pix.saturating_add(alpha_bytes);
+        if off.saturating_add(min_need) <= bytes.len() {
+            chosen = Some((w, h, off));
+            break;
+        }
+    }
+
+    let (w, h, off) = chosen.ok_or_else(|| "找不到可用 mip 数据".to_string())?;
+    let pix = (w as usize).saturating_mul(h as usize);
+    let alpha_bytes = if alpha_bits == 0 {
+        0usize
+    } else {
+        (pix.saturating_mul(alpha_bits as usize).saturating_add(7)) / 8
+    };
+
+    let idx = bytes
+        .get(off..off.saturating_add(pix))
+        .ok_or_else(|| "像素索引区越界".to_string())?;
+    let alpha = bytes
+        .get(off.saturating_add(pix)..off.saturating_add(pix).saturating_add(alpha_bytes))
+        .unwrap_or(&[]);
+
+    let mut rgba = vec![0u8; pix.saturating_mul(4)];
+    let alpha_scale = if alpha_bits == 0 {
+        0.0f32
+    } else {
+        255.0f32 / (((1u32 << alpha_bits) - 1) as f32)
+    };
+
+    for i in 0..pix {
+        let p = (idx[i] as usize).saturating_mul(4);
+        let d = i.saturating_mul(4);
+        // BLP 调色板是 BGRA 顺序
+        rgba[d] = palette.get(p + 2).copied().unwrap_or(0);
+        rgba[d + 1] = palette.get(p + 1).copied().unwrap_or(0);
+        rgba[d + 2] = palette.get(p).copied().unwrap_or(0);
+        rgba[d + 3] = if alpha_bits == 0 {
+            255
+        } else {
+            ((bit_val(alpha, alpha_bits, i) as f32) * alpha_scale).round().clamp(0.0, 255.0) as u8
+        };
+    }
+
+    let img = image::RgbaImage::from_raw(w, h, rgba)
+        .ok_or_else(|| "构建 RGBA 图像失败".to_string())?;
+    Ok(image::DynamicImage::ImageRgba8(img))
 }
 
 /// BLP 解码为 image::DynamicImage（取 0 级 mipmap）。
 fn decode_blp_image(path: &Path) -> Result<image::DynamicImage, String> {
-    let blp = load_blp(path).map_err(|e| format!("BLP 读取失败: {e}"))?;
-    let img = blp_to_image(&blp, 0).map_err(|e| format!("BLP 转换失败: {e}"))?;
-    Ok(img)
+    // 对 BLP1 Direct 先走宽松分支，避免 image_blp 在异常 mipmap 表上刷大量 ERROR 日志。
+    if let Ok(bytes) = fs::read(path) {
+        if bytes.get(0..4) == Some(b"BLP1") {
+            if let Some(content) = le_u32_at(&bytes, 4) {
+                if content == 1 {
+                    return decode_blp1_direct_lenient(path);
+                }
+            }
+        }
+    }
+
+    let strict = match load_blp(path) {
+        Ok(blp) => blp_to_image(&blp, 0).map_err(|e| format!("BLP 转换失败: {e}")),
+        Err(e) => Err(format!("BLP 读取失败: {e}")),
+    };
+    match strict {
+        Ok(img) => Ok(img),
+        Err(strict_err) => match decode_blp1_direct_lenient(path) {
+            Ok(img) => {
+                log::warn!(
+                    "[ui-designer] BLP 严格解码失败，已回退宽松解码: {} ; err={}",
+                    path.display(),
+                    strict_err
+                );
+                Ok(img)
+            }
+            Err(fallback_err) => Err(format!(
+                "{}；宽松解码也失败: {}",
+                strict_err, fallback_err
+            )),
+        },
+    }
 }
 
 // ----------------------------- Commands --------------------------------
@@ -330,11 +468,10 @@ pub fn global_resource_list(root: String) -> Vec<GlobalResourceEntry> {
     out
 }
 
-/// 哪些源扩展可以转成 BLP？schema 2.0.0 起：
-/// **TGA 不转换**——WC3 原生支持 TGA，保留原文件 alpha 精度更优。
-/// 只转无损拷贝代价高的 PNG/JPG/BMP。
-fn is_convertible_to_blp(ext: &str) -> bool {
-    matches!(ext, "png" | "jpg" | "jpeg" | "bmp")
+/// 哪些源扩展可以转成 TGA？
+/// 仅转 png/jpg/jpeg；blp/tga/bmp 保持原样。
+fn is_convertible_to_tga(ext: &str) -> bool {
+    matches!(ext, "png" | "jpg" | "jpeg")
 }
 
 #[tauri::command]
@@ -487,9 +624,9 @@ fn do_import(app: AppHandle, req: ImportRequest) -> ImportResult {
             .unwrap_or("image")
             .to_string();
 
-        // 决定目标扩展名——TGA 不转换（WC3 原生支持，直接拷贝即可）
-        let want_convert = req.convert_to_blp && is_convertible_to_blp(src_ext.as_str());
-        let target_ext = if want_convert { "blp" } else { src_ext.as_str() };
+        // 决定目标扩展名：仅 jpg/png/jpeg 转成 tga；其他格式保持原样。
+        let want_convert = req.convert_to_blp && is_convertible_to_tga(src_ext.as_str());
+        let target_ext = if want_convert { "tga" } else { src_ext.as_str() };
 
         // 按"被展开的目录层级"决定最终目标目录。
         let this_dst_dir = if extra_sub.is_empty() {
@@ -520,13 +657,13 @@ fn do_import(app: AppHandle, req: ImportRequest) -> ImportResult {
         let target = resolve_target(&this_dst_dir, &stem, target_ext, req.overwrite);
 
         let outcome = if want_convert {
-            // 转换路径：load → encode BLP → 写入；失败时降级为原样拷贝。
+            // 转换路径：load → encode TGA → 写入；失败时降级为原样拷贝。
             match image::open(src).map_err(|e| format!("加载图片失败: {e}")) {
                 Ok(img) => {
-                    if let Err(e) = encode_blp(img, &target) {
+                    if let Err(e) = encode_tga(img, &target) {
                         result.warnings.push(ImportWarning {
                             source: src_raw_display.clone(),
-                            message: format!("转换 BLP 失败，已降级为直接拷贝原文件：{e}"),
+                            message: format!("转换 TGA 失败，已降级为直接拷贝原文件：{e}"),
                         });
                         // 回退：按原扩展名另起一个目标文件
                         let fallback = resolve_target(&this_dst_dir, &stem, &src_ext, req.overwrite);
@@ -778,6 +915,21 @@ pub fn blp_decode_to_png_base64(abs_path: String) -> Result<String, String> {
         return Err("BLP 文件不存在".to_string());
     }
     let img = decode_blp_image(&p)?;
+    let mut buf: Vec<u8> = Vec::new();
+    img.write_to(&mut std::io::Cursor::new(&mut buf), ImageOutputFormat::Png)
+        .map_err(|e| format!("PNG 编码失败: {e}"))?;
+    let b64 = B64.encode(&buf);
+    Ok(format!("data:image/png;base64,{b64}"))
+}
+
+/// 将 TGA（含压缩/RLE）解码为 PNG 的 base64 data URL。
+#[tauri::command]
+pub fn tga_decode_to_png_base64(abs_path: String) -> Result<String, String> {
+    let p = PathBuf::from(&abs_path);
+    if !p.is_file() {
+        return Err("TGA 文件不存在".to_string());
+    }
+    let img = image::open(&p).map_err(|e| format!("TGA 解码失败: {e}"))?;
     let mut buf: Vec<u8> = Vec::new();
     img.write_to(&mut std::io::Cursor::new(&mut buf), ImageOutputFormat::Png)
         .map_err(|e| format!("PNG 编码失败: {e}"))?;

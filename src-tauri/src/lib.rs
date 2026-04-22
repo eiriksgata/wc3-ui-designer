@@ -259,6 +259,7 @@ pub fn run() {
             global_resources::global_resource_delete,
             global_resources::global_resource_migrate,
             global_resources::blp_decode_to_png_base64,
+            global_resources::tga_decode_to_png_base64,
             global_resources::path_exists,
             global_resources::disk_free_space,
             global_resources::read_file_as_base64,
