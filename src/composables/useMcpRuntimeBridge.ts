@@ -45,6 +45,11 @@ type RuntimeActionApi = {
   undo?: () => any;
   redo?: () => any;
   /**
+   * 返回前端当前已打开项目的文件路径，未打开时为 null。
+   * 供 Rust MCP 侧自动对齐引擎项目状态使用（只读，不触发副作用）。
+   */
+  getCurrentProjectPath?: () => string | null;
+  /**
    * Phase 4: 提案-确认门禁。AI 通过 ui_runtime_call(method="proposeActions") 进来，
    * 前端排入队列，用户 Accept/Reject 后 Promise resolve，返回给 AI。
    */
@@ -75,6 +80,7 @@ export function useMcpRuntimeBridge(options: RuntimeBridgeOptions) {
       throw new Error('invalid runtime request: method is required');
     }
 
+    if (method === 'currentProjectPath') return { path: api.getCurrentProjectPath?.() ?? null };
     if (method === 'batchApply') return api.batchApply?.(params.actions || []);
     if (method === 'proposeActions') {
       const p = (params || {}) as any;

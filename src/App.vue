@@ -1398,6 +1398,7 @@ useMcpRuntimeBridge({
   api: {
     ...actionApi,
     proposeActions: proposals.propose,
+    getCurrentProjectPath: () => currentProjectPath.value,
   },
   message,
 });

@@ -104,6 +104,73 @@ async fn resolve_global_resource_root(
     non_empty_trimmed(from_wrapped)
 }
 
+/// 若 Rust 引擎尚未加载任何项目，尝试从前端运行态读取当前已打开的项目路径并自动 open。
+///
+/// 解决"前端已打开项目但 MCP 读到空快照/空资源"的不一致问题。
+/// 仅在读取类工具（ui_get_snapshot / ui_list_resources 等）入口调用；
+/// 写入类工具（ui_apply_actions）不调用，避免隐式写到非预期项目。
+///
+/// 返回值：本次操作产生的诊断信息（供 envelope diagnostics 附加）。
+async fn ensure_engine_project_loaded(
+    engine: &Arc<Mutex<ProjectEngine>>,
+    runtime: &Arc<RuntimeBridge>,
+) -> Vec<String> {
+    // 1. 快速检查：若引擎已加载项目，无需任何 IPC。
+    {
+        let eng = engine.lock().await;
+        if eng.is_project_loaded() {
+            return vec![];
+        }
+    }
+
+    // 2. 向前端询问当前已打开项目的路径（3 s 超时；前端未运行时快速失败）。
+    let resp = match runtime
+        .dispatch("currentProjectPath", json!({}), 3_000)
+        .await
+    {
+        Ok(v) => v,
+        Err(_) => {
+            return vec![
+                "auto-sync skipped: frontend not available or no response within 3s".to_string(),
+            ]
+        }
+    };
+
+    let path = resp
+        .get("path")
+        .and_then(|v| v.as_str())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+
+    let project_path = match path {
+        Some(p) => p,
+        None => {
+            return vec!["auto-sync skipped: no frontend project path".to_string()];
+        }
+    };
+
+    // 3. 顺便读取全局资源库根（前端设置），用于水合图片绝对路径。
+    let global_root = resolve_global_resource_root(runtime, None).await;
+
+    // 4. 打开项目并水合路径。
+    let mut eng = engine.lock().await;
+    match eng.open_project(project_path.clone()).await {
+        Ok(_) => {
+            eng.hydrate_runtime_image_paths(global_root);
+            vec![format!(
+                "auto-sync success: loaded frontend project \"{}\"",
+                project_path
+            )]
+        }
+        Err(e) => {
+            vec![format!(
+                "auto-sync failed: could not open \"{}\" – {}",
+                project_path, e
+            )]
+        }
+    }
+}
+
 /// 通过 Tauri 事件把运行态请求交给前端，不再使用文件队列。
 pub struct RuntimeBridge {
     pending: DashMap<String, oneshot::Sender<serde_json::Value>>,
@@ -423,13 +490,15 @@ impl UiDesignerMcp {
         Ok(Json(ok_envelope(snap_value, diags)))
     }
 
-    #[tool(description = "获取当前项目快照（引擎侧）")]
+    #[tool(description = "获取当前项目快照（引擎侧）。若引擎尚未加载项目，会自动尝试从前端读取当前打开的项目路径并同步加载。")]
     async fn ui_get_snapshot(&self) -> Result<Json<UiDesignerEnvelope>, McpError> {
+        let mut auto_diags = ensure_engine_project_loaded(&self.engine, &self.runtime).await;
         let eng = self.engine.lock().await;
         let snap = eng.get_snapshot();
-        let diags = snap.diagnostics.clone();
+        let mut diags = snap.diagnostics.clone();
+        auto_diags.extend(diags.drain(..));
         let v = serde_json::to_value(&snap).map_err(|e| McpError::internal_error(e.to_string(), None))?;
-        Ok(Json(ok_envelope(v, diags)))
+        Ok(Json(ok_envelope(v, auto_diags)))
     }
 
     #[tool(description = "批量应用动作（create/update/delete/setParent）")]
@@ -515,18 +584,32 @@ impl UiDesignerMcp {
         Ok(Json(ok_envelope(json!({ "events": events }), vec![])))
     }
 
-    #[tool(description = "列出当前项目中被 widget 引用的图片资源（含 localPath / exists / usedByWidgetIds）。未显式传 `globalResourceRoot` 时会尝试从设计器设置自动读取。")]
+    #[tool(description = "列出当前项目中被 widget 引用的图片资源（含 localPath / exists / usedByWidgetIds）。未显式传 `globalResourceRoot` 时会尝试从设计器设置自动读取。若引擎尚未加载项目，会自动尝试从前端读取当前打开的项目路径并同步加载。")]
     async fn ui_list_resources(
         &self,
         Parameters(args): Parameters<UiListResourcesArgs>,
     ) -> Result<Json<UiDesignerEnvelope>, McpError> {
+        let auto_diags = ensure_engine_project_loaded(&self.engine, &self.runtime).await;
         let global_root = resolve_global_resource_root(&self.runtime, args.global_resource_root).await;
         let eng = self.engine.lock().await;
-        let data = eng.list_resources(
+        let mut data = eng.list_resources(
             args.include_unused.unwrap_or(false),
             global_root,
         );
-        Ok(Json(ok_envelope(data, vec![])))
+        // 把 auto_diags 注入到 data.diagnostics 中（list_resources 返回的是普通 JSON value）
+        if !auto_diags.is_empty() {
+            if let Some(obj) = data.as_object_mut() {
+                let existing = obj
+                    .get("diagnostics")
+                    .and_then(|v| v.as_array())
+                    .cloned()
+                    .unwrap_or_default();
+                let mut merged: Vec<serde_json::Value> = auto_diags.iter().map(|s| json!(s)).collect();
+                merged.extend(existing);
+                obj.insert("diagnostics".into(), json!(merged));
+            }
+        }
+        Ok(Json(ok_envelope(data, auto_diags)))
     }
 
     #[tool(description = "把资源文件从各自的 localPath 拷贝到 targetDir 下的 <war3 相对路径>（典型用法：把资源落到模板仓 `resource/`）。未指定 values 时默认拷贝所有被 widget 引用的资源。未显式传 `globalResourceRoot` 时会尝试从设计器设置自动读取。")]

@@ -103,6 +103,12 @@ impl ProjectEngine {
         }
     }
 
+    /// 引擎当前是否已显式加载了一个项目（即调用过 open_project 或 import_from_sidecar）。
+    /// 仅用于 MCP 自动对齐守卫的判断，不作为业务状态权威。
+    pub fn is_project_loaded(&self) -> bool {
+        self.project_path.is_some()
+    }
+
     pub async fn open_project(&mut self, project_path: String) -> Result<ProjectSnapshot, String> {
         let raw = fs::read_to_string(&project_path)
             .await
