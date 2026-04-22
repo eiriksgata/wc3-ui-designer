@@ -129,6 +129,41 @@ impl ProjectEngine {
         Ok(self.get_snapshot())
     }
 
+    /// schema 2.0.0 运行时约定：widget.image/clickImage/hoverImage 应是绝对路径。
+    ///
+    /// 当项目从磁盘打开时，这些字段通常是相对全局库根的 relPath；此函数用于在内存中
+    /// 做 rel -> abs 水合，便于画布与预览直接读取。
+    pub fn hydrate_runtime_image_paths(&mut self, global_root: Option<String>) -> usize {
+        let root = global_root
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .unwrap_or_default();
+
+        let mut changed = 0usize;
+        for w in &mut self.project.widgets {
+            let Some(obj) = w.as_object_mut() else {
+                continue;
+            };
+            for field in ["image", "clickImage", "hoverImage"] {
+                let Some(v) = obj.get_mut(field) else {
+                    continue;
+                };
+                let Some(s) = v.as_str() else {
+                    continue;
+                };
+                if s.is_empty() {
+                    continue;
+                }
+                let hydrated = rel_to_abs_runtime_path(s, &root);
+                if hydrated != s {
+                    *v = serde_json::Value::String(hydrated);
+                    changed += 1;
+                }
+            }
+        }
+        changed
+    }
+
     
 
     pub async fn save_project(&mut self, project_path: Option<String>) -> Result<serde_json::Value, String> {
@@ -250,8 +285,18 @@ impl ProjectEngine {
     //     时也会把"全局库里存在但项目没引用"的值列出来——当前无独立登记表，等价于
     //     "库里的所有条目"，由前端通过 `global_resource_root` 解析，MCP 侧暂不扩展。
 
-    pub fn list_resources(&self, _include_unused: bool) -> serde_json::Value {
+    pub fn list_resources(
+        &self,
+        _include_unused: bool,
+        global_resource_root: Option<String>,
+    ) -> serde_json::Value {
         use std::collections::BTreeMap;
+
+        let global_root: Option<PathBuf> = global_resource_root
+            .as_ref()
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .map(PathBuf::from);
 
         let mut used_by: BTreeMap<String, Vec<i64>> = BTreeMap::new();
         for w in &self.project.widgets {
@@ -269,8 +314,28 @@ impl ProjectEngine {
         let mut out = Vec::with_capacity(used_by.len());
         for (value, widgets) in used_by {
             let is_absolute = is_absolute_path(&value);
-            let local_path = if is_absolute { value.clone() } else { String::new() };
-            let exists = if local_path.is_empty() { false } else { Path::new(&local_path).is_file() };
+            let (local_path, exists) = if is_absolute {
+                let lp = value.clone();
+                let ok = Path::new(&lp).is_file();
+                (lp, ok)
+            } else if let Some(root) = &global_root {
+                // 兼容两种相对值：`war3mapImported/...` 与库内相对路径（如 `ui\\...`）。
+                let war3_rel = value
+                    .trim_start_matches(|c| c == '\\' || c == '/')
+                    .to_string();
+                let stripped = war3_rel
+                    .strip_prefix("war3mapImported/")
+                    .or_else(|| war3_rel.strip_prefix("war3mapImported\\"))
+                    .unwrap_or(&war3_rel)
+                    .to_string();
+                let rel_sys = stripped
+                    .replace('\\', std::path::MAIN_SEPARATOR_STR)
+                    .replace('/', std::path::MAIN_SEPARATOR_STR);
+                let abs = root.join(rel_sys);
+                (abs.to_string_lossy().to_string(), abs.is_file())
+            } else {
+                (String::new(), false)
+            };
             let label = Path::new(&value.replace('\\', "/"))
                 .file_name()
                 .map(|n| n.to_string_lossy().to_string())
@@ -1353,6 +1418,34 @@ pub fn is_absolute_path(s: &str) -> bool {
 
 fn escape_lua_text(text: &str) -> String {
     text.replace("]]", "] ]")
+}
+
+fn strip_war3_imported_prefix(s: &str) -> &str {
+    let t = s.trim_start_matches(|c| c == '\\' || c == '/');
+    let lower = t.to_ascii_lowercase();
+    if lower.starts_with("war3mapimported/") {
+        return &t["war3mapImported/".len()..];
+    }
+    if lower.starts_with("war3mapimported\\") {
+        return &t["war3mapImported\\".len()..];
+    }
+    t
+}
+
+fn rel_to_abs_runtime_path(raw: &str, global_root: &str) -> String {
+    let stripped = strip_war3_imported_prefix(raw);
+    if is_absolute_path(stripped) {
+        return stripped.replace('\\', "/");
+    }
+    if global_root.is_empty() {
+        return stripped.to_string();
+    }
+    let root = global_root.replace('\\', "/").trim_end_matches('/').to_string();
+    let rel = stripped
+        .replace('\\', "/")
+        .trim_start_matches('/')
+        .to_string();
+    format!("{}/{}", root, rel)
 }
 
 fn chrono_timestamp_ms() -> u128 {

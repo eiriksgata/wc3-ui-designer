@@ -1,5 +1,5 @@
 <template>
-    <div class="right panel" :style="{ width: rightWidth + 'px' }">
+    <div class="right panel" :style="{ width: rightWidth + 'px', flex: `0 0 ${rightWidth}px` }">
         <div class="prop-header">
             <h3>属性面板</h3>
             <v-tabs
@@ -785,20 +785,21 @@
                 <h4 class="shortcuts-title">快捷操作</h4>
                 <div class="shortcut-hint">
                     <div class="shortcut-hint-item">
-                        <span class="shortcut-hint-icon">🖱️</span>
+                        <v-icon icon="mdi-cursor-move" size="18" class="shortcut-hint-icon" />
                         <div class="shortcut-hint-content">
                             <div class="shortcut-hint-desc">拖拽控件</div>
                             <div class="shortcut-hint-key">鼠标左键点击并拖动</div>
                         </div>
                     </div>
                     <div class="shortcut-hint-item">
-                        <span class="shortcut-hint-icon">↘️</span>
+                        <v-icon icon="mdi-arrow-expand" size="18" class="shortcut-hint-icon" />
                         <div class="shortcut-hint-content">
                             <div class="shortcut-hint-desc">缩放控件</div>
                             <div class="shortcut-hint-key">拖动控件右下角</div>
                         </div>
                     </div>
                     <div class="shortcut-hint-item">
+                        <v-icon icon="mdi-drag" size="18" class="shortcut-hint-icon" />
                         <div class="shortcut-hint-content">
                             <div class="shortcut-hint-desc">拖动画布</div>
                             <div class="shortcut-hint-key">空格 + 鼠标拖动</div>
@@ -806,6 +807,7 @@
                     </div>
 
                     <div class="shortcut-hint-item">
+                        <v-icon icon="mdi-magnify-plus" size="18" class="shortcut-hint-icon" />
                         <div class="shortcut-hint-content">
                             <div class="shortcut-hint-desc">缩放画布</div>
                             <div class="shortcut-hint-key">Ctrl + 鼠标滚轮</div>
@@ -1077,7 +1079,7 @@ const tweenTypeItems = [
 <style scoped>
 /* 复用 App 中的样式类名，保证视觉一致，这里只放必要覆盖 */
 .right.panel {
-    flex: 0 0 260px;
+    flex: 0 0 auto;
     background: #252526;
     border-right: none;
     border-left: 1px solid #333;
@@ -1247,7 +1249,7 @@ const tweenTypeItems = [
 }
 
 .shortcut-hint-icon {
-    font-size: 18px;
+    color: #9aa0a6;
     flex-shrink: 0;
     margin-top: 2px;
 }

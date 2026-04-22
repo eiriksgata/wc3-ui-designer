@@ -15,7 +15,7 @@
         @open-mcp-guide="showMcpUsageGuide = true" />
 
       <div class="main-row">
-        <div class="left panel" :style="{ width: leftWidth + 'px' }" ref="leftPanelRef">
+        <div class="left panel" :style="{ width: leftWidth + 'px', flex: `0 0 ${leftWidth}px` }" ref="leftPanelRef">
           <h3>控件面板</h3>
           <div class="hint">点击添加到画布中心</div>
           <div class="control-buttons">
@@ -941,7 +941,7 @@ const isResourcesCollapsed = ref(false);
 const lastExpandedResourcesHeight = ref(resourcesHeight.value);
 
 const MIN_LEFT_WIDTH = 140;
-const MAX_LEFT_WIDTH = 500;
+const MAX_LEFT_WIDTH = 600;
 const MIN_RIGHT_WIDTH = 180;
 const MAX_RIGHT_WIDTH = 500;
 const MIN_RESOURCES_HEIGHT = 120;
@@ -968,6 +968,16 @@ const dragState = ref({
   resourcesHeight: 0,
 });
 
+const applyGlobalDragUX = (type) => {
+  document.body.style.userSelect = 'none';
+  document.body.style.cursor = type === 'bottom' ? 'row-resize' : 'col-resize';
+};
+
+const clearGlobalDragUX = () => {
+  document.body.style.userSelect = '';
+  document.body.style.cursor = '';
+};
+
 const startDragLeft = (ev) => {
   dragState.value = {
     type: 'left',
@@ -977,6 +987,7 @@ const startDragLeft = (ev) => {
     rightWidth: rightWidth.value,
     resourcesHeight: resourcesHeight.value,
   };
+  applyGlobalDragUX('left');
   document.addEventListener('mousemove', handleDragMouseMove);
   document.addEventListener('mouseup', stopDrag);
 };
@@ -990,6 +1001,7 @@ const startDragRight = (ev) => {
     rightWidth: rightWidth.value,
     resourcesHeight: resourcesHeight.value,
   };
+  applyGlobalDragUX('right');
   document.addEventListener('mousemove', handleDragMouseMove);
   document.addEventListener('mouseup', stopDrag);
 };
@@ -1004,6 +1016,7 @@ const startDragBottom = (ev) => {
     rightWidth: rightWidth.value,
     resourcesHeight: resourcesHeight.value,
   };
+  applyGlobalDragUX('bottom');
   document.addEventListener('mousemove', handleDragMouseMove);
   document.addEventListener('mouseup', stopDrag);
 };
@@ -1018,7 +1031,6 @@ const handleDragMouseMove = (ev) => {
     let w = s.leftWidth + dx;
     w = Math.min(MAX_LEFT_WIDTH, Math.max(MIN_LEFT_WIDTH, w));
     leftWidth.value = w;
-    settings.value.controlPanelWidth = w;
   } else if (s.type === 'right') {
     let w = s.rightWidth - dx; // 向左拖动增加右侧宽度
     w = Math.min(MAX_RIGHT_WIDTH, Math.max(MIN_RIGHT_WIDTH, w));
@@ -1044,9 +1056,14 @@ const toggleResourcesCollapsed = () => {
 };
 
 const stopDrag = () => {
+  const finishedType = dragState.value.type;
   dragState.value.type = null;
+  clearGlobalDragUX();
   document.removeEventListener('mousemove', handleDragMouseMove);
   document.removeEventListener('mouseup', stopDrag);
+  if (finishedType === 'left') {
+    settings.value.controlPanelWidth = leftWidth.value;
+  }
   // 控制面板宽度拖动结束后保存到设置
   try {
     saveSettings();
@@ -1203,6 +1220,16 @@ const paddingToCss = (p) => {
     return `${t}px ${r}px ${b}px ${l}px`;
 };
 
+// 资源路径在不同链路里可能出现 `C:\\a\\b.png` / `C:/a/b.png` 两种写法，
+// 这里统一成可比较的 key，避免仅因斜杠风格不同而匹配不到预览图。
+const normalizeImagePathKey = (raw) => {
+  if (!raw || typeof raw !== 'string') return '';
+  const s = raw.trim().replace(/\\/g, '/');
+  if (!s) return '';
+  if (/^[A-Za-z]:\//.test(s) || s.startsWith('//')) return s.toLowerCase();
+  return s;
+};
+
 const applyTextAlignStyle = (style, w) => {
     const { h, v } = getWidgetAlign(w);
     style.alignItems =
@@ -1231,9 +1258,14 @@ const applyBackgroundStyle = (style, w) => {
     const presetValue = presetKey && UIBackgrounds[presetKey] != null ? UIBackgrounds[presetKey] : '';
     const imageValue = presetValue || w.image || '';
     // schema 2.0.0：widget.image 运行时 = 绝对路径。按 abs 去全局库里反查预览。
-    const res = imageValue
-        ? globalResources.value.find((r) => r.value === imageValue || r.localPath === imageValue)
-        : null;
+    const imageKey = normalizeImagePathKey(imageValue);
+    const res = imageKey
+      ? globalResources.value.find((r) => {
+        const valueKey = normalizeImagePathKey(r.value);
+        const localKey = normalizeImagePathKey(r.localPath);
+        return valueKey === imageKey || localKey === imageKey;
+      })
+      : null;
 
     if (res && res.previewUrl) {
         style.backgroundImage = `url(${res.previewUrl})`;
@@ -1592,6 +1624,9 @@ onMounted(() => {
     window.removeEventListener('resize', handleResize);
     removeKeyboardListeners();
     document.removeEventListener('click', handleDocClick, true);
+    document.removeEventListener('mousemove', handleDragMouseMove);
+    document.removeEventListener('mouseup', stopDrag);
+    clearGlobalDragUX();
   });
 });
 
@@ -1901,20 +1936,97 @@ onMounted(() => {
 }
 
 .v-resizer {
-  width: 4px;
+  width: calc(10px / var(--ui-zoom, 1));
+  min-width: 6px;
+  flex: 0 0 auto;
+  position: relative;
+  z-index: 2;
   cursor: col-resize;
-  background: transparent;
+  background: linear-gradient(
+    to right,
+    transparent 0,
+    transparent calc(50% - 1px),
+    var(--panel-border) calc(50% - 1px),
+    var(--panel-border) calc(50% + 1px),
+    transparent calc(50% + 1px),
+    transparent 100%
+  );
+  user-select: none;
+  touch-action: none;
+  transition: background 120ms ease, box-shadow 120ms ease;
 }
 
-.left-resizer,
-.right-resizer {
-  background: transparent;
+.v-resizer:hover {
+  background: linear-gradient(
+    to right,
+    transparent 0,
+    transparent calc(50% - 1px),
+    rgba(100, 162, 255, 0.9) calc(50% - 1px),
+    rgba(100, 162, 255, 0.9) calc(50% + 1px),
+    transparent calc(50% + 1px),
+    transparent 100%
+  );
+  box-shadow: inset 0 0 0 1px rgba(100, 162, 255, 0.18);
+}
+
+.v-resizer:active {
+  background: linear-gradient(
+    to right,
+    transparent 0,
+    transparent calc(50% - 1px),
+    rgba(100, 162, 255, 1) calc(50% - 1px),
+    rgba(100, 162, 255, 1) calc(50% + 1px),
+    transparent calc(50% + 1px),
+    transparent 100%
+  );
+  box-shadow: inset 0 0 0 1px rgba(100, 162, 255, 0.28);
 }
 
 .h-resizer {
-  height: 4px;
+  height: calc(10px / var(--ui-zoom, 1));
+  min-height: 6px;
+  flex: 0 0 auto;
+  position: relative;
+  z-index: 2;
   cursor: row-resize;
-  background: transparent;
+  background: linear-gradient(
+    to bottom,
+    transparent 0,
+    transparent calc(50% - 1px),
+    var(--panel-border) calc(50% - 1px),
+    var(--panel-border) calc(50% + 1px),
+    transparent calc(50% + 1px),
+    transparent 100%
+  );
+  user-select: none;
+  touch-action: none;
+  transition: background 120ms ease, box-shadow 120ms ease;
+}
+
+.h-resizer:hover {
+  background: linear-gradient(
+    to bottom,
+    transparent 0,
+    transparent calc(50% - 1px),
+    rgba(100, 162, 255, 0.9) calc(50% - 1px),
+    rgba(100, 162, 255, 0.9) calc(50% + 1px),
+    transparent calc(50% + 1px),
+    transparent 100%
+  );
+  box-shadow: inset 0 0 0 1px rgba(100, 162, 255, 0.18);
+}
+
+.h-resizer:active {
+  background: linear-gradient(
+    to bottom,
+    transparent 0,
+    transparent calc(50% - 1px),
+    rgba(100, 162, 255, 1) calc(50% - 1px),
+    rgba(100, 162, 255, 1) calc(50% + 1px),
+    transparent calc(50% + 1px),
+    transparent 100%
+  );
+  box-shadow: inset 0 0 0 1px rgba(100, 162, 255, 0.28);
 }
 
 .menubar-msg {

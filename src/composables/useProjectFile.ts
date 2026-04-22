@@ -1,4 +1,5 @@
 import { ref, type Ref } from 'vue';
+import { invoke } from '@tauri-apps/api/core';
 import { open as tauriOpen, save as tauriSave } from '@tauri-apps/plugin-dialog';
 import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs';
 import type { Widget, Settings, Animation } from '../types';
@@ -39,6 +40,21 @@ function versionGte(a: string | undefined, b: string): boolean {
 const MIN_SUPPORTED_SCHEMA = '2.0.0';
 
 const IMAGE_FIELDS = ['image', 'clickImage', 'hoverImage'] as const;
+
+/**
+ * 读取项目文本：优先走后端 command（不受 fs:scope 限制），失败再回退 plugin-fs。
+ */
+async function readProjectText(filePath: string): Promise<string> {
+    try {
+        const b64 = await invoke<string>('read_file_as_base64', { absPath: filePath });
+        const bin = atob(b64);
+        const bytes = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        return new TextDecoder('utf-8').decode(bytes);
+    } catch {
+        return await readTextFile(filePath);
+    }
+}
 
 /** 统一反斜杠风格（war3 路径风格）。 */
 const toBackslash = (p: string): string => (p || '').replace(/\//g, '\\');
@@ -271,7 +287,7 @@ export function useProjectFile(
 
     const openProjectFromPath = async (filePath: string) => {
         try {
-            const json = await readTextFile(filePath);
+            const json = await readProjectText(filePath);
             const data = JSON.parse(json) as any;
             if (!applyLoadedData(data)) return;
             currentProjectPath.value = filePath;
@@ -281,7 +297,7 @@ export function useProjectFile(
             message.value = '项目已从文件载入：' + filePath;
         } catch (e: any) {
             console.error('载入项目失败', e);
-            message.value = '载入项目失败';
+            message.value = '载入项目失败：' + (e?.message || String(e));
         }
     };
 

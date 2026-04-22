@@ -63,6 +63,47 @@ fn ok_envelope(data: serde_json::Value, diagnostics: Vec<String>) -> UiDesignerE
     }
 }
 
+fn non_empty_trimmed(value: Option<String>) -> Option<String> {
+    value
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
+/// 解析全局资源库根：优先使用调用方显式传入，其次尝试从运行态设置读取。
+async fn resolve_global_resource_root(
+    runtime: &Arc<RuntimeBridge>,
+    provided: Option<String>,
+) -> Option<String> {
+    if let Some(v) = non_empty_trimmed(provided) {
+        return Some(v);
+    }
+
+    let snap = runtime
+        .dispatch("getProjectSnapshot", json!({}), 3_000)
+        .await
+        .ok()?;
+
+    // 兼容两种返回形态：
+    // 1) { settings: { globalResourceRootPath: "..." } }
+    // 2) { data: { settings: { globalResourceRootPath: "..." } } }
+    let from_direct = snap
+        .get("settings")
+        .and_then(|s| s.get("globalResourceRootPath"))
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+    if let Some(v) = non_empty_trimmed(from_direct) {
+        return Some(v);
+    }
+
+    let from_wrapped = snap
+        .get("data")
+        .and_then(|d| d.get("settings"))
+        .and_then(|s| s.get("globalResourceRootPath"))
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+    non_empty_trimmed(from_wrapped)
+}
+
 /// 通过 Tauri 事件把运行态请求交给前端，不再使用文件队列。
 pub struct RuntimeBridge {
     pending: DashMap<String, oneshot::Sender<serde_json::Value>>,
@@ -264,6 +305,9 @@ struct UiListResourcesArgs {
     /// 是否包含"已登记但当前没有被任何 widget 引用"的资源；默认 false。
     #[serde(default, rename = "includeUnused")]
     include_unused: Option<bool>,
+    /// 全局资源库根；用于把相对引用值解析成本地绝对路径并检测 exists。
+    #[serde(default, rename = "globalResourceRoot")]
+    global_resource_root: Option<String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -324,11 +368,14 @@ impl UiDesignerMcp {
         &self,
         Parameters(args): Parameters<UiOpenProjectArgs>,
     ) -> Result<Json<UiDesignerEnvelope>, McpError> {
+        let global_root = resolve_global_resource_root(&self.runtime, None).await;
         let mut eng = self.engine.lock().await;
-        let snap = eng
+        eng
             .open_project(args.project_path)
             .await
             .map_err(|e| McpError::internal_error(e, None))?;
+        eng.hydrate_runtime_image_paths(global_root);
+        let snap = eng.get_snapshot();
         let diags: Vec<String> = snap.diagnostics.clone();
         let v = serde_json::to_value(&snap).map_err(|e| McpError::internal_error(e.to_string(), None))?;
         Ok(Json(ok_envelope(v, diags)))
@@ -468,28 +515,33 @@ impl UiDesignerMcp {
         Ok(Json(ok_envelope(json!({ "events": events }), vec![])))
     }
 
-    #[tool(description = "列出当前项目中被 widget 引用的图片资源（含 localPath / exists / usedByWidgetIds）。AI 可据此得知哪些资源还没登记或源文件缺失。")]
+    #[tool(description = "列出当前项目中被 widget 引用的图片资源（含 localPath / exists / usedByWidgetIds）。未显式传 `globalResourceRoot` 时会尝试从设计器设置自动读取。")]
     async fn ui_list_resources(
         &self,
         Parameters(args): Parameters<UiListResourcesArgs>,
     ) -> Result<Json<UiDesignerEnvelope>, McpError> {
+        let global_root = resolve_global_resource_root(&self.runtime, args.global_resource_root).await;
         let eng = self.engine.lock().await;
-        let data = eng.list_resources(args.include_unused.unwrap_or(false));
+        let data = eng.list_resources(
+            args.include_unused.unwrap_or(false),
+            global_root,
+        );
         Ok(Json(ok_envelope(data, vec![])))
     }
 
-    #[tool(description = "把资源文件从各自的 localPath 拷贝到 targetDir 下的 <war3 相对路径>（典型用法：把资源落到模板仓 `resource/`）。未指定 values 时默认拷贝所有被 widget 引用的资源。")]
+    #[tool(description = "把资源文件从各自的 localPath 拷贝到 targetDir 下的 <war3 相对路径>（典型用法：把资源落到模板仓 `resource/`）。未指定 values 时默认拷贝所有被 widget 引用的资源。未显式传 `globalResourceRoot` 时会尝试从设计器设置自动读取。")]
     async fn ui_copy_resources(
         &self,
         Parameters(args): Parameters<UiCopyResourcesArgs>,
     ) -> Result<Json<UiDesignerEnvelope>, McpError> {
+        let global_root = resolve_global_resource_root(&self.runtime, args.global_resource_root).await;
         let eng = self.engine.lock().await;
         let data = eng
             .copy_resources(
                 args.target_dir,
                 args.values,
                 args.overwrite.unwrap_or(true),
-                args.global_resource_root,
+                global_root,
             )
             .await
             .map_err(|e| McpError::internal_error(e, None))?;
@@ -506,14 +558,15 @@ impl UiDesignerMcp {
         Ok(Json(ok_envelope(data, diags)))
     }
 
-    #[tool(description = "把 widget 里裸绝对路径（例如 AI 直接贴进来的 C:\\Users\\...\\icon.png）指向的文件**拷进全局资源库**，并把 widget 字段改写为**全局库内的绝对路径**（schema 2.0.0：widget.image 运行时 = 绝对磁盘路径；.uiproj 落盘时由设计器前端统一转成相对路径）。schema 2.0.0 起**必须有全局资源库**：可以在 `global_resource_root` 参数里传，也可以让用户在设计器 Settings 里配好；两处都缺就返回 `data.ok = false` + `data.diagnostics`，不改工程。通常在 `ui_apply_actions` 之后、`ui_copy_resources` 之前调用。")]
+    #[tool(description = "把 widget 里裸绝对路径（例如 AI 直接贴进来的 C:\\Users\\...\\icon.png）指向的文件**拷进全局资源库**，并把 widget 字段改写为**全局库内的绝对路径**（schema 2.0.0：widget.image 运行时 = 绝对磁盘路径；.uiproj 落盘时由设计器前端统一转成相对路径）。schema 2.0.0 起**必须有全局资源库**：可以在 `global_resource_root` 参数里传，也可以让工具从设计器 Settings 自动读取；两处都缺就返回 `data.ok = false` + `data.diagnostics`，不改工程。通常在 `ui_apply_actions` 之后、`ui_copy_resources` 之前调用。")]
     async fn ui_normalize_resource_paths(
         &self,
         Parameters(args): Parameters<UiNormalizeResourcePathsArgs>,
     ) -> Result<Json<UiDesignerEnvelope>, McpError> {
+        let global_root = resolve_global_resource_root(&self.runtime, args.global_resource_root).await;
         let (data, snap_value) = {
             let mut eng = self.engine.lock().await;
-            let data = eng.normalize_resource_paths(args.prefix, args.global_resource_root);
+            let data = eng.normalize_resource_paths(args.prefix, global_root);
             let snap = eng.get_snapshot();
             let sv = serde_json::to_value(&snap)
                 .map_err(|e| McpError::internal_error(e.to_string(), None))?;
